@@ -63,14 +63,6 @@ go build -o vpsub cmd/server/main.go
 #### 方式二：Docker部署
 
 ```bash
-# 克隆仓库
-git clone https://github.com/djx30103/vpsub.git
-cd vpsub
-
-# 构建Docker镜像
-docker build -t vpsub .
-
-# 运行容器
 docker run -d \
   --name vpsub \
   -p 30103:30103 \
@@ -82,7 +74,6 @@ docker run -d \
 #### 方式三：使用Docker Compose
 
 ```yaml
-# docker-compose.yml
 services:
   vpsub:
     image: ghcr.io/djx30103/vpsub:latest
