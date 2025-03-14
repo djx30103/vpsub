@@ -1,0 +1,77 @@
+# 应用模式：release、debug（默认release）
+app_mode: release
+
+# 服务器配置
+server:
+  # 监听地址和端口
+  listen_addr: :30103
+  # 请求超时时间
+  timeout: 30s
+
+# 日志配置
+log:
+  # 日志级别: debug, info, warn, error
+  level: warn
+
+# 存储配置
+storage:
+  # 订阅文件存储主目录
+  subscription_dir: ./subscriptions
+
+# 默认配置（可被服务商配置覆盖）
+defaults:
+  # 缓存配置
+  cache:
+    # 文件缓存时间，0表示不缓存（文件内容缓存的话，修改后的文件需要等待缓存失效）
+    file_ttl: 30s
+    # API响应缓存时间，0表示不缓存（API接口建议缓存，避免触发服务商的限速）
+    api_ttl: 60s
+    # 最终响应缓存时间，0表示不缓存（文件内容 + api响应结果）
+    response_ttl: 60s
+
+  # 服务商通用配置
+  provider:
+    # API请求超时时间
+    request_timeout: 10s
+    # 数据更新间隔
+    update_interval: 24h
+
+# VPS服务商配置
+providers:
+  # 搬瓦工(BandwagonHost)配置
+  bandwagonhost:
+    # API路由前缀
+    - route_prefix: "/2e9d2eee7d2e40d399998c85853f68f4"
+      # API凭证
+      api_id: "123123"
+      api_key: "234234"
+      # 订阅文件
+      subscriptions:
+        - "bwg1.yaml"
+        - "bwg2.yaml"
+
+    - route_prefix: "/e26460a0ac3f49cfaf1c6d31d3846daf"
+      # API凭证
+      api_id: "456"
+      api_key: "111"
+      # 订阅文件
+      subscriptions:
+        - "bwg2_main.yaml"
+        - "bwg2_backup.yaml"
+      # 覆盖默认配置
+      overrides:
+        cache:
+          file_ttl: 30s
+          api_ttl: 60s
+          response_ttl: 0
+        provider:
+          request_timeout: 10s
+          update_interval: 24h
+
+  # Vultr配置模板（示例）
+  # vultr:
+  #   - route_prefix: "/vultr1"
+  #     api_key: "your-vultr-api-key"
+  #     subscriptions:
+  #       - "vultr1_main.yaml"
+  #       - "vultr1_backup.yaml"
