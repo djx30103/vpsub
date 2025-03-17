@@ -1,0 +1,29 @@
+linters-settings:
+  gocyclo:
+    # Minimal code complexity to report.
+    # Default: 30 (but we recommend 10-20)
+    min-complexity: 20
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - gocyclo
+    - misspell
+    - gofmt
+    - goimports
+# 输出配置选项
+output:
+  # colored-line-number|line-number|json|tab|checkstyle|code-climate, 默认是 "colored-line-number"
+  formats: [{ format: colored-line-number }]
+  # 打印有问题的代码行，默认为true
+  print-issued-lines: true
+  # 在问题文本的末尾打印linter名称，默认为true
+  print-linter-name: true
+  # 使问题按行输出唯一，默认为true
+  uniq-by-line: true
