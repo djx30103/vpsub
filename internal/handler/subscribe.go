@@ -3,7 +3,6 @@ package handler
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	emoji "github.com/Andrew-M-C/go.emoji"
+	"vpsub/pkg/xemoji"
+
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
@@ -55,61 +54,14 @@ func NewSubscribeHandler(
 	}
 }
 
-// 返回：emoji:id 的映射
-func encodeEmojiToID(allSettings map[string]any) (map[string]string, error) {
-	by, err := json.Marshal(allSettings)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal allSettings")
-	}
-
-	data := string(by)
-
-	emojiKv := make(map[string]string)
-	final := emoji.ReplaceAllEmojiFunc(data, func(emoji string) string {
-		id, ok := emojiKv[emoji]
-		if ok {
-			return id
-		}
-
-		id = "{{.%EMOJI%}}" + uuid.NewString() + "{{.%EMOJI%}}"
-
-		emojiKv[emoji] = id
-
-		return id
-	})
-
-	err = json.Unmarshal([]byte(final), &allSettings)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal allSettings")
-	}
-
-	return emojiKv, nil
-}
-
-func decodeEmojiFromID(by []byte, emojiKv map[string]string) []byte {
-	data := string(by)
-
-	for em, id := range emojiKv {
-		data = strings.ReplaceAll(data, id, em)
-	}
-
-	return []byte(data)
-}
-
 func createProxyGroup(name string) any {
-	kv := map[string]any{
+	return map[string]any{
 		"name": name,
 		"type": "select",
 		"proxies": []string{
 			"REJECT",
 		},
 	}
-
-	//by, err := yaml.Marshal(kv)
-	//if err != nil {
-	//	return ""
-	//}
-	return kv
 }
 
 func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
@@ -151,19 +103,22 @@ func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 	trafficFormat = strings.ReplaceAll(trafficFormat, "{{.used}}", used)
 	trafficFormat = strings.ReplaceAll(trafficFormat, "{{.total}}", total)
 
+	expireGroup := createProxyGroup(expireFormat)
+	trafficGroup := createProxyGroup(trafficFormat)
+
 	// 插入开头
 	if h.appConfig.Global.UsageDisplay.Prepend {
-		groupList = slices.Insert(groupList, 0, createProxyGroup(expireFormat))
-		groupList = slices.Insert(groupList, 0, createProxyGroup(trafficFormat))
+		groupList = slices.Insert(groupList, 0, expireGroup)
+		groupList = slices.Insert(groupList, 0, trafficGroup)
 	} else {
-		groupList = append(groupList, createProxyGroup(trafficFormat))
-		groupList = append(groupList, createProxyGroup(expireFormat))
+		groupList = append(groupList, trafficGroup)
+		groupList = append(groupList, expireGroup)
 	}
 
 	v.Set("proxy-groups", groupList)
 
 	allSettings := v.AllSettings()
-	emojiKv, err := encodeEmojiToID(allSettings)
+	emojiKv, err := xemoji.EncodeEmojiToID(allSettings)
 	if err != nil {
 		return errors.Wrap(err, "failed to emoji2ID")
 	}
@@ -173,7 +128,7 @@ func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 		return errors.Wrap(err, "failed to marshal allSettings")
 	}
 
-	info.CacheFile = decodeEmojiFromID(by, emojiKv)
+	info.CacheFile = xemoji.DecodeEmojiFromID(by, emojiKv)
 
 	return nil
 }
