@@ -25,5 +25,3 @@ output:
   print-issued-lines: true
   # 在问题文本的末尾打印linter名称，默认为true
   print-linter-name: true
-  # 使问题按行输出唯一，默认为true
-  uniq-by-line: true
