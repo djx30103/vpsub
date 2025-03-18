@@ -56,7 +56,7 @@ func NewSubscribeHandler(
 }
 
 // 返回：emoji:id 的映射
-func marshalEmoji(allSettings map[string]any) (map[string]string, error) {
+func encodeEmojiToID(allSettings map[string]any) (map[string]string, error) {
 	by, err := json.Marshal(allSettings)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to marshal allSettings")
@@ -86,7 +86,7 @@ func marshalEmoji(allSettings map[string]any) (map[string]string, error) {
 	return emojiKv, nil
 }
 
-func unmarshalEmoji(by []byte, emojiKv map[string]string) []byte {
+func decodeEmojiFromID(by []byte, emojiKv map[string]string) []byte {
 	data := string(by)
 
 	for em, id := range emojiKv {
@@ -96,7 +96,7 @@ func unmarshalEmoji(by []byte, emojiKv map[string]string) []byte {
 	return []byte(data)
 }
 
-func buildGroupInfo(name string) any {
+func createProxyGroup(name string) any {
 	kv := map[string]any{
 		"name": name,
 		"type": "select",
@@ -112,7 +112,7 @@ func buildGroupInfo(name string) any {
 	return kv
 }
 
-func (h *SubscribeHandler) buildUsageGroup(info *ResponseCacheInfo) error {
+func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 	if !h.appConfig.Global.UsageDisplay.Enable {
 		return nil
 	}
@@ -153,17 +153,17 @@ func (h *SubscribeHandler) buildUsageGroup(info *ResponseCacheInfo) error {
 
 	// 插入开头
 	if h.appConfig.Global.UsageDisplay.Prepend {
-		groupList = slices.Insert(groupList, 0, buildGroupInfo(expireFormat))
-		groupList = slices.Insert(groupList, 0, buildGroupInfo(trafficFormat))
+		groupList = slices.Insert(groupList, 0, createProxyGroup(expireFormat))
+		groupList = slices.Insert(groupList, 0, createProxyGroup(trafficFormat))
 	} else {
-		groupList = append(groupList, buildGroupInfo(trafficFormat))
-		groupList = append(groupList, buildGroupInfo(expireFormat))
+		groupList = append(groupList, createProxyGroup(trafficFormat))
+		groupList = append(groupList, createProxyGroup(expireFormat))
 	}
 
 	v.Set("proxy-groups", groupList)
 
 	allSettings := v.AllSettings()
-	emojiKv, err := marshalEmoji(allSettings)
+	emojiKv, err := encodeEmojiToID(allSettings)
 	if err != nil {
 		return errors.Wrap(err, "failed to emoji2ID")
 	}
@@ -173,90 +173,109 @@ func (h *SubscribeHandler) buildUsageGroup(info *ResponseCacheInfo) error {
 		return errors.Wrap(err, "failed to marshal allSettings")
 	}
 
-	info.CacheFile = unmarshalEmoji(by, emojiKv)
+	info.CacheFile = decodeEmojiFromID(by, emojiKv)
 
 	return nil
 }
 
-func (h *SubscribeHandler) loadResponse(ctx context.Context, conf config.PathConfig, path string) (any, error) {
-	needCacheResponse := *conf.Cache.ResponseTTL != 0
-	needCacheFile := *conf.Cache.FileTTL != 0
-	needCacheAPI := *conf.Cache.APITTL != 0
-	responseKey := "response:" + path
-	fileKey := "file:" + path
-	apiKey := "api:" + path
-
-	if needCacheResponse {
-		cacheResponse, ok := h.cache.Get(responseKey)
+func (h *SubscribeHandler) fetchProviderInfo(ctx context.Context, conf config.PathConfig, cacheKey string) (*provider.APIResponseInfo, error) {
+	if *conf.Cache.APITTL != 0 {
+		cacheAPIAny, ok := h.cache.Get(cacheKey)
 		if ok {
-			h.logger.WithContext(ctx).Debug("cache hit", zap.String("key", responseKey))
+			return cacheAPIAny.(*provider.APIResponseInfo), nil
+		}
+	}
+
+	var (
+		res *provider.APIResponseInfo
+		err error
+	)
+
+	switch conf.ProviderType {
+	case "bandwagonhost":
+		client := bandwagonhost.New(conf)
+		res, err = client.GetServiceInfo(ctx)
+	}
+
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get service info")
+	}
+
+	return res, nil
+}
+
+func (h *SubscribeHandler) readSubscriptionFile(_ context.Context, conf config.PathConfig, cacheKey string) ([]byte, error) {
+	if *conf.Cache.FileTTL != 0 {
+		cacheFileAny, ok := h.cache.Get(cacheKey)
+		if ok {
+			return cacheFileAny.([]byte), nil
+		}
+	}
+
+	res, err := os.ReadFile(filepath.Join(h.appConfig.Global.Storage.SubscriptionDir, conf.Filename))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read file")
+	}
+
+	return res, nil
+}
+
+func (h *SubscribeHandler) prepareSubscriptionResponse(ctx context.Context, conf config.PathConfig, path string) (any, error) {
+
+	responseCacheKey := "response:" + path
+	apiCacheKey := "api:" + path
+	fileKey := "file:" + path
+
+	// 从缓存中读取
+	if *conf.Cache.ResponseTTL != 0 {
+		cacheResponse, ok := h.cache.Get(responseCacheKey)
+		if ok {
+			h.logger.WithContext(ctx).Debug("cache hit", zap.String("key", responseCacheKey))
 			return cacheResponse, nil
 		}
 	}
 
-	newResponse := new(ResponseCacheInfo)
+	var (
+		err error
+		res = new(ResponseCacheInfo)
+	)
 
-	if needCacheFile {
-		cacheFileAny, ok := h.cache.Get(fileKey)
-		if ok {
-			h.logger.WithContext(ctx).Debug("cache hit", zap.String("key", fileKey))
-			newResponse.CacheFile = cacheFileAny.([]byte)
-		}
+	// 获取文件信息
+	res.CacheFile, err = h.readSubscriptionFile(ctx, conf, fileKey)
+	if err != nil {
+		h.logger.WithContext(ctx).Error("failed to read file", zap.Error(err))
+		return nil, errors.Wrap(err, "failed to read file")
 	}
 
-	if needCacheAPI {
-		cacheAPIAny, ok := h.cache.Get(apiKey)
-		if ok {
-			h.logger.WithContext(ctx).Debug("cache hit", zap.String("key", apiKey))
-			newResponse.CacheAPI = cacheAPIAny.(*provider.APIResponseInfo)
-		}
+	// 构建使用情况，忽略错误
+	err = h.appendUsageGroups(res)
+	if err != nil {
+		h.logger.WithContext(ctx).Error("failed to build usage group", zap.Error(err))
+		//return nil, errors.Wrap(err, "failed to build usage group")
 	}
 
-	var err error
-	if newResponse.CacheAPI == nil {
-		switch conf.ProviderType {
-		case "bandwagonhost":
-			client := bandwagonhost.New(conf)
-			newResponse.CacheAPI, err = client.GetServiceInfo(ctx)
-		}
-
-		if err != nil {
-			h.logger.WithContext(ctx).Error("failed to get service info", zap.Error(err))
-			return nil, errors.Wrap(err, "failed to get service info")
-		}
-
-		if needCacheAPI {
-			h.cache.Set(apiKey, newResponse.CacheAPI, *conf.Cache.APITTL)
-		}
+	if *conf.Cache.FileTTL != 0 {
+		h.cache.Set(fileKey, res.CacheFile, *conf.Cache.FileTTL)
 	}
 
-	if newResponse.CacheFile == nil {
-		newResponse.CacheFile, err = os.ReadFile(filepath.Join(h.appConfig.Global.Storage.SubscriptionDir, conf.Filename))
-		if err != nil {
-			h.logger.WithContext(ctx).Error("failed to read file", zap.Error(err))
-			return nil, errors.Wrap(err, "failed to read file")
-		}
-
-		// 添加失败的话忽略掉返回错误
-		err = h.buildUsageGroup(newResponse)
-		if err != nil {
-			h.logger.WithContext(ctx).Error("failed to build usage group", zap.Error(err))
-			//return nil, errors.Wrap(err, "failed to build usage group")
-		}
-
-		if needCacheFile {
-			h.cache.Set(fileKey, newResponse.CacheFile, *conf.Cache.FileTTL)
-		}
+	res.CacheAPI, err = h.fetchProviderInfo(ctx, conf, apiCacheKey)
+	if err != nil {
+		h.logger.WithContext(ctx).Error("failed to get service info", zap.Error(err))
+		return nil, errors.Wrap(err, "failed to get service info")
 	}
 
-	if needCacheResponse {
-		h.cache.Set(responseKey, newResponse, *conf.Cache.ResponseTTL)
+	if *conf.Cache.APITTL != 0 {
+		h.cache.Set(apiCacheKey, res.CacheAPI, *conf.Cache.APITTL)
 	}
 
-	return newResponse, nil
+	if *conf.Cache.ResponseTTL != 0 {
+		h.cache.Set(responseCacheKey, res, *conf.Cache.ResponseTTL)
+	}
+
+	return res, nil
 }
 
-func (h *SubscribeHandler) buildResponse(c *gin.Context, conf config.PathConfig, info *ResponseCacheInfo) {
+func (h *SubscribeHandler) writeSubscriptionResponse(c *gin.Context, conf config.PathConfig, info *ResponseCacheInfo) {
 	cacheAPI := info.CacheAPI
 	subInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", cacheAPI.Upload, cacheAPI.Download, cacheAPI.Total, cacheAPI.Expire)
 
@@ -287,7 +306,7 @@ func (h *SubscribeHandler) Get(c *gin.Context) {
 	}
 
 	res, err, _ := h.sfGroup.Do(path, func() (interface{}, error) {
-		return h.loadResponse(c, conf, path)
+		return h.prepareSubscriptionResponse(c, conf, path)
 	})
 
 	if err != nil {
@@ -301,5 +320,5 @@ func (h *SubscribeHandler) Get(c *gin.Context) {
 	}
 
 	info := res.(*ResponseCacheInfo)
-	h.buildResponse(c, conf, info)
+	h.writeSubscriptionResponse(c, conf, info)
 }
