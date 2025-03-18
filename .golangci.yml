@@ -2,7 +2,7 @@ linters-settings:
   gocyclo:
     # Minimal code complexity to report.
     # Default: 30 (but we recommend 10-20)
-    min-complexity: 20
+    min-complexity: 15
 linters:
   disable-all: true
   enable:
