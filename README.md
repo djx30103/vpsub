@@ -233,12 +233,13 @@ providers:
 
   # RackNerd 服务配置
   racknerd:
-    route_prefix: "/route_prefix3"
-    api_id: "API Hash"
-    api_key: "API Key"
-    # 关联的订阅配置文件列表
-    subscriptions:
-      - "rn.yaml"
+    - route_prefix: "/route_prefix3"
+      api_id: "API Hash"
+      api_key: "API Key"
+      # 关联的订阅配置文件列表
+      subscriptions:
+        - "rn.yaml"
+
 
 ```
 
