@@ -22,7 +22,7 @@ global:
   # 用户流量统计与到期时间显示配置
   usage_display:
     # 是否在代理分组中显示用户流量和到期信息
-    enable: false
+    enable: true
     # 信息分组在列表中的位置 (true: 置顶显示, false: 末尾显示)
     prepend: false
     # 流量使用情况的显示模板 (支持变量: {{.used}} - 已用流量, {{.total}} - 总流量)
@@ -63,26 +63,26 @@ defaults:
 
 # VPS服务商配置列表
 providers:
-  # 搬瓦工(BandwagonHost)服务配置
+  # BandwagonHost 服务配置
   bandwagonhost:
     # API路由前缀
-    - route_prefix: "/2e9d2eee7d2e40d399998c85853f68f4"
+    - route_prefix: "/route_prefix1"
       # API凭证
-      api_id: "123123"
-      api_key: "123123"
+      api_id: "VEID"
+      api_key: "API KEY"
       # 关联的订阅配置文件列表
       subscriptions:
-        - "1.yaml"
-        - "bwg2.yaml"
+        - "b1.yaml"
+        - "b2.yaml"
 
-    - route_prefix: "/e26460a0ac3f49cfaf1c6d31d3846daf"
+    - route_prefix: "/route_prefix2"
       # API凭证
-      api_id: "456"
-      api_key: "111"
+      api_id: "VEID"
+      api_key: "API KEY"
       # 关联的订阅配置文件列表
       subscriptions:
-        - "bwg2_main.yaml"
-        - "bwg2_backup.yaml"
+        - "b3.yaml"
+        - "b4.yaml"
       # 实例特定的配置覆盖
       overrides:
         cache:
@@ -93,10 +93,11 @@ providers:
           request_timeout: 10s
           update_interval: 24h
 
-  # Vultr配置示例模板
-  # vultr:
-  #   - route_prefix: "/vultr1"
-  #     api_key: "your-vultr-api-key"
-  #     subscriptions:
-  #       - "vultr1_main.yaml"
-  #       - "vultr1_backup.yaml"
+  # RackNerd 服务配置
+  racknerd:
+    route_prefix: "/route_prefix3"
+    api_id: "API Hash"
+    api_key: "API Key"
+    # 关联的订阅配置文件列表
+    subscriptions:
+      - "rn.yaml"

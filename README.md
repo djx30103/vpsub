@@ -26,6 +26,7 @@
 | <div align="center">服务商</div> | <div align="center">流量查询</div> | <div align="center">重置日期</div> | <div align="center">配置参数映射</div> |
 |:-------:|:---------:|:---------:|:-------------:|
 | BandwagonHost | ✅ | ✅ | `api_id`: VEID<br>`api_key`: API KEY |
+| RackNerd | ✅ | ❌ | `api_id`: API Hash<br>`api_key`: API Key |
 | 更多服务商 | 🔄 | 🔄 | 敬请期待 |
 
 </div>
@@ -111,7 +112,31 @@ docker-compose up -d
 
 编辑`config/config.yml`文件，添加你的API凭证和订阅文件信息：
 
+#### 最小配置示例
+
+以下是最小配置示例，其他配置项将使用系统默认值：
+
 ```yaml
+# VPS服务商配置列表
+providers:
+  # BandwagonHost 服务配置
+  bandwagonhost:
+    # API路由前缀
+    - route_prefix: "/2e9d2eee7d2e40d399998c85853f68f4"
+      # API凭证
+      api_id: "VEID"
+      api_key: "API KEY"
+      # 关联的订阅配置文件列表
+      subscriptions:
+        - "1.yaml"
+```
+
+#### 完整配置示例
+
+如果你需要更细致的控制，可以参考以下完整配置：
+
+```yaml
+
 # 应用模式：release、debug（默认release）
 app_mode: release
 
@@ -177,26 +202,26 @@ defaults:
 
 # VPS服务商配置列表
 providers:
-  # 搬瓦工(BandwagonHost)服务配置
+  # BandwagonHost 服务配置
   bandwagonhost:
     # API路由前缀
-    - route_prefix: "/2e9d2eee7d2e40d399998c85853f68f4"
+    - route_prefix: "/route_prefix1"
       # API凭证
-      api_id: "123123"
-      api_key: "123123"
+      api_id: "VEID"
+      api_key: "API KEY"
       # 关联的订阅配置文件列表
       subscriptions:
-        - "1.yaml"
-        - "bwg2.yaml"
+        - "b1.yaml"
+        - "b2.yaml"
 
-    - route_prefix: "/e26460a0ac3f49cfaf1c6d31d3846daf"
+    - route_prefix: "/route_prefix2"
       # API凭证
-      api_id: "456"
-      api_key: "111"
+      api_id: "VEID"
+      api_key: "API KEY"
       # 关联的订阅配置文件列表
       subscriptions:
-        - "bwg2_main.yaml"
-        - "bwg2_backup.yaml"
+        - "b3.yaml"
+        - "b4.yaml"
       # 实例特定的配置覆盖
       overrides:
         cache:
@@ -207,13 +232,14 @@ providers:
           request_timeout: 10s
           update_interval: 24h
 
-  # Vultr配置示例模板
-  # vultr:
-  #   - route_prefix: "/vultr1"
-  #     api_key: "your-vultr-api-key"
-  #     subscriptions:
-  #       - "vultr1_main.yaml"
-  #       - "vultr1_backup.yaml"
+  # RackNerd 服务配置
+  racknerd:
+    route_prefix: "/route_prefix3"
+    api_id: "API Hash"
+    api_key: "API Key"
+    # 关联的订阅配置文件列表
+    subscriptions:
+      - "rn.yaml"
 
 ```
 
@@ -229,7 +255,7 @@ http://your-server:30103/<route_prefix>/<subscription_file>
 
 - `your-server`: 你的服务器地址
 - `route_prefix`: 配置文件中设置的路由前缀
-- `subscription_file`: 订阅文件名称（例如：config.yaml）
+- `subscription_file`: 订阅文件名称（例如：bwg.yaml）
 
 #### 示例
 

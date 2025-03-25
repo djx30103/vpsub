@@ -40,3 +40,6 @@ bin/
 
 go.work
 go.work.sum
+
+subscriptions/*.yaml
+subscriptions/*.yml

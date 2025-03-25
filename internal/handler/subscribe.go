@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"vpsub/pkg/provider"
+	"vpsub/pkg/provider/base"
 	"vpsub/pkg/xemoji"
 
 	"github.com/gin-gonic/gin"
@@ -25,8 +27,6 @@ import (
 
 	"vpsub/pkg/bytesize"
 	"vpsub/pkg/config"
-	"vpsub/pkg/provider"
-	"vpsub/pkg/provider/bandwagonhost"
 )
 
 type SubscribeHandler struct {
@@ -39,7 +39,7 @@ type SubscribeHandler struct {
 
 type ResponseCacheInfo struct {
 	CacheFile []byte
-	CacheAPI  *provider.APIResponseInfo
+	CacheAPI  *base.APIResponseInfo
 }
 
 func NewSubscribeHandler(
@@ -64,6 +64,30 @@ func createProxyGroup(name string) any {
 	}
 }
 
+func newAppendGroup(apiInfo *base.APIResponseInfo, usageDisplay config.UsageDisplayConfig) []any {
+	groupList := make([]any, 0, 2)
+	if apiInfo.Expire > 0 {
+		// "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
+		t := time.Unix(apiInfo.Expire, 0)
+		expireFormat := strings.ReplaceAll(usageDisplay.ExpireFormat, "{{.year}}", t.Format("2006"))
+		expireFormat = strings.ReplaceAll(expireFormat, "{{.month}}", t.Format("01"))
+		expireFormat = strings.ReplaceAll(expireFormat, "{{.day}}", t.Format("02"))
+		expireFormat = strings.ReplaceAll(expireFormat, "{{.hour}}", t.Format("15"))
+		expireFormat = strings.ReplaceAll(expireFormat, "{{.minute}}", t.Format("04"))
+		expireFormat = strings.ReplaceAll(expireFormat, "{{.second}}", t.Format("05"))
+		groupList = append(groupList, createProxyGroup(expireFormat))
+	}
+
+	if apiInfo.Upload > 0 || apiInfo.Download > 0 || apiInfo.Total > 0 {
+		// "⛽ 已用流量 {{.used}} / {{.total}}"
+		trafficFormat := strings.ReplaceAll(usageDisplay.TrafficFormat, "{{.used}}", bytesize.Format(apiInfo.Download+apiInfo.Upload, usageDisplay.TrafficUnit))
+		trafficFormat = strings.ReplaceAll(trafficFormat, "{{.total}}", bytesize.Format(apiInfo.Total, usageDisplay.TrafficUnit))
+		groupList = append(groupList, createProxyGroup(trafficFormat))
+	}
+
+	return groupList
+}
+
 func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 	if !h.appConfig.Global.UsageDisplay.Enable {
 		return nil
@@ -85,34 +109,16 @@ func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 		return errors.New("no proxy-groups found in config")
 	}
 
-	// "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
-	t := time.Unix(info.CacheAPI.Expire, 0)
-	expireFormat := h.appConfig.Global.UsageDisplay.ExpireFormat
-	expireFormat = strings.ReplaceAll(expireFormat, "{{.year}}", t.Format("2006"))
-	expireFormat = strings.ReplaceAll(expireFormat, "{{.month}}", t.Format("01"))
-	expireFormat = strings.ReplaceAll(expireFormat, "{{.day}}", t.Format("02"))
-	expireFormat = strings.ReplaceAll(expireFormat, "{{.hour}}", t.Format("15"))
-	expireFormat = strings.ReplaceAll(expireFormat, "{{.minute}}", t.Format("04"))
-	expireFormat = strings.ReplaceAll(expireFormat, "{{.second}}", t.Format("05"))
-
-	// "⛽ 已用流量 {{.used}} / {{.total}}"
-	trafficFormat := h.appConfig.Global.UsageDisplay.TrafficFormat
-	trafficUnit := h.appConfig.Global.UsageDisplay.TrafficUnit
-	used := bytesize.Format(info.CacheAPI.Download+info.CacheAPI.Upload, trafficUnit)
-	total := bytesize.Format(info.CacheAPI.Total, trafficUnit)
-	trafficFormat = strings.ReplaceAll(trafficFormat, "{{.used}}", used)
-	trafficFormat = strings.ReplaceAll(trafficFormat, "{{.total}}", total)
-
-	expireGroup := createProxyGroup(expireFormat)
-	trafficGroup := createProxyGroup(trafficFormat)
+	appendGroupList := newAppendGroup(info.CacheAPI, h.appConfig.Global.UsageDisplay)
+	if len(appendGroupList) == 0 {
+		return errors.New("no usage groups found in config")
+	}
 
 	// 插入开头
 	if h.appConfig.Global.UsageDisplay.Prepend {
-		groupList = slices.Insert(groupList, 0, expireGroup)
-		groupList = slices.Insert(groupList, 0, trafficGroup)
+		groupList = slices.Insert(groupList, 0, appendGroupList...)
 	} else {
-		groupList = append(groupList, trafficGroup)
-		groupList = append(groupList, expireGroup)
+		groupList = append(groupList, appendGroupList...)
 	}
 
 	v.Set("proxy-groups", groupList)
@@ -133,25 +139,25 @@ func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 	return nil
 }
 
-func (h *SubscribeHandler) fetchProviderInfo(ctx context.Context, conf config.PathConfig, cacheKey string) (*provider.APIResponseInfo, error) {
+func (h *SubscribeHandler) fetchProviderInfo(ctx context.Context, conf config.PathConfig, cacheKey string) (*base.APIResponseInfo, error) {
 	if *conf.Cache.APITTL != 0 {
 		cacheAPIAny, ok := h.cache.Get(cacheKey)
 		if ok {
-			return cacheAPIAny.(*provider.APIResponseInfo), nil
+			return cacheAPIAny.(*base.APIResponseInfo), nil
 		}
 	}
 
-	var (
-		res *provider.APIResponseInfo
-		err error
-	)
-
-	switch conf.ProviderType {
-	case "bandwagonhost":
-		client := bandwagonhost.New(conf)
-		res, err = client.GetServiceInfo(ctx)
+	client, err := provider.NewProvider(base.APIRequestInfo{
+		APIID:          conf.APIID,
+		APIKey:         conf.APIKey,
+		ProviderType:   conf.ProviderType,
+		RequestTimeout: *conf.Provider.RequestTimeout,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to new provider")
 	}
 
+	res, err := client.GetServiceInfo(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get service info")
 	}
@@ -202,6 +208,12 @@ func (h *SubscribeHandler) prepareSubscriptionResponse(ctx context.Context, conf
 		return nil, errors.Wrap(err, "failed to read file")
 	}
 
+	res.CacheAPI, err = h.fetchProviderInfo(ctx, conf, apiCacheKey)
+	if err != nil {
+		h.logger.WithContext(ctx).Error("failed to get service info", zap.Error(err))
+		return nil, errors.Wrap(err, "failed to get service info")
+	}
+
 	// 构建使用情况，忽略错误
 	err = h.appendUsageGroups(res)
 	if err != nil {
@@ -211,12 +223,6 @@ func (h *SubscribeHandler) prepareSubscriptionResponse(ctx context.Context, conf
 
 	if *conf.Cache.FileTTL != 0 {
 		h.cache.Set(fileKey, res.CacheFile, *conf.Cache.FileTTL)
-	}
-
-	res.CacheAPI, err = h.fetchProviderInfo(ctx, conf, apiCacheKey)
-	if err != nil {
-		h.logger.WithContext(ctx).Error("failed to get service info", zap.Error(err))
-		return nil, errors.Wrap(err, "failed to get service info")
 	}
 
 	if *conf.Cache.APITTL != 0 {

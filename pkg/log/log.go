@@ -85,5 +85,5 @@ func newZap(conf config.LogConfig) *Logger {
 		level,                      // 日志级别
 	)
 
-	return &Logger{zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel))}
+	return &Logger{zap.New(core, zap.AddCaller())}
 }

@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"os"
 
+	"vpsub/pkg/provider"
+
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 )
@@ -87,9 +89,7 @@ func (a *AppConfig) preprocessConfig() error {
 	}
 
 	for providerType, itemList := range a.Providers {
-		switch providerType {
-		case "bandwagonhost":
-		default:
+		if !provider.IsValidProvider(providerType) {
 			return errors.Errorf("unknown provider type: %s", providerType)
 		}
 
