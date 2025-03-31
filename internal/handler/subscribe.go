@@ -64,7 +64,7 @@ func createProxyGroup(name string) any {
 	}
 }
 
-func newAppendGroup(apiInfo *base.APIResponseInfo, usageDisplay config.UsageDisplayConfig) []any {
+func newAppendGroup(apiInfo *base.APIResponseInfo, usageDisplay *config.UsageDisplayConfig) []any {
 	groupList := make([]any, 0, 2)
 	if apiInfo.Expire > 0 {
 		// "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
@@ -88,8 +88,8 @@ func newAppendGroup(apiInfo *base.APIResponseInfo, usageDisplay config.UsageDisp
 	return groupList
 }
 
-func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
-	if !h.appConfig.Global.UsageDisplay.Enable {
+func appendUsageGroups(conf config.PathConfig, info *ResponseCacheInfo) error {
+	if !conf.DefaultConfig.UsageDisplay.Enable {
 		return nil
 	}
 
@@ -109,13 +109,13 @@ func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 		return errors.New("no proxy-groups found in config")
 	}
 
-	appendGroupList := newAppendGroup(info.CacheAPI, h.appConfig.Global.UsageDisplay)
+	appendGroupList := newAppendGroup(info.CacheAPI, conf.DefaultConfig.UsageDisplay)
 	if len(appendGroupList) == 0 {
 		return errors.New("no usage groups found in config")
 	}
 
 	// 插入开头
-	if h.appConfig.Global.UsageDisplay.Prepend {
+	if conf.DefaultConfig.UsageDisplay.Prepend {
 		groupList = slices.Insert(groupList, 0, appendGroupList...)
 	} else {
 		groupList = append(groupList, appendGroupList...)
@@ -140,7 +140,7 @@ func (h *SubscribeHandler) appendUsageGroups(info *ResponseCacheInfo) error {
 }
 
 func (h *SubscribeHandler) fetchProviderInfo(ctx context.Context, conf config.PathConfig, cacheKey string) (*base.APIResponseInfo, error) {
-	if *conf.Cache.APITTL != 0 {
+	if *conf.DefaultConfig.Cache.APITTL != 0 {
 		cacheAPIAny, ok := h.cache.Get(cacheKey)
 		if ok {
 			return cacheAPIAny.(*base.APIResponseInfo), nil
@@ -151,7 +151,7 @@ func (h *SubscribeHandler) fetchProviderInfo(ctx context.Context, conf config.Pa
 		APIID:          conf.APIID,
 		APIKey:         conf.APIKey,
 		ProviderType:   conf.ProviderType,
-		RequestTimeout: *conf.Provider.RequestTimeout,
+		RequestTimeout: *conf.DefaultConfig.Provider.RequestTimeout,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to new provider")
@@ -166,7 +166,7 @@ func (h *SubscribeHandler) fetchProviderInfo(ctx context.Context, conf config.Pa
 }
 
 func (h *SubscribeHandler) readSubscriptionFile(_ context.Context, conf config.PathConfig, cacheKey string) ([]byte, error) {
-	if *conf.Cache.FileTTL != 0 {
+	if *conf.DefaultConfig.Cache.FileTTL != 0 {
 		cacheFileAny, ok := h.cache.Get(cacheKey)
 		if ok {
 			return cacheFileAny.([]byte), nil
@@ -188,7 +188,7 @@ func (h *SubscribeHandler) prepareSubscriptionResponse(ctx context.Context, conf
 	fileKey := "file:" + path
 
 	// 从缓存中读取
-	if *conf.Cache.ResponseTTL != 0 {
+	if *conf.DefaultConfig.Cache.ResponseTTL != 0 {
 		cacheResponse, ok := h.cache.Get(responseCacheKey)
 		if ok {
 			h.logger.WithContext(ctx).Debug("cache hit", zap.String("key", responseCacheKey))
@@ -215,22 +215,22 @@ func (h *SubscribeHandler) prepareSubscriptionResponse(ctx context.Context, conf
 	}
 
 	// 构建使用情况，忽略错误
-	err = h.appendUsageGroups(res)
+	err = appendUsageGroups(conf, res)
 	if err != nil {
 		h.logger.WithContext(ctx).Error("failed to build usage group", zap.Error(err))
 		//return nil, errors.Wrap(err, "failed to build usage group")
 	}
 
-	if *conf.Cache.FileTTL != 0 {
-		h.cache.Set(fileKey, res.CacheFile, *conf.Cache.FileTTL)
+	if *conf.DefaultConfig.Cache.FileTTL != 0 {
+		h.cache.Set(fileKey, res.CacheFile, *conf.DefaultConfig.Cache.FileTTL)
 	}
 
-	if *conf.Cache.APITTL != 0 {
-		h.cache.Set(apiCacheKey, res.CacheAPI, *conf.Cache.APITTL)
+	if *conf.DefaultConfig.Cache.APITTL != 0 {
+		h.cache.Set(apiCacheKey, res.CacheAPI, *conf.DefaultConfig.Cache.APITTL)
 	}
 
-	if *conf.Cache.ResponseTTL != 0 {
-		h.cache.Set(responseCacheKey, res, *conf.Cache.ResponseTTL)
+	if *conf.DefaultConfig.Cache.ResponseTTL != 0 {
+		h.cache.Set(responseCacheKey, res, *conf.DefaultConfig.Cache.ResponseTTL)
 	}
 
 	return res, nil
@@ -246,7 +246,7 @@ func (h *SubscribeHandler) writeSubscriptionResponse(c *gin.Context, conf config
 
 	c.Header("Subscription-Updated-At", strconv.FormatInt(time.Now().Unix(), 10))
 	c.Header("Subscription-Userinfo", subInfo)
-	c.Header("Profile-Update-Interval", strconv.FormatFloat(conf.Provider.UpdateInterval.Hours(), 'f', 2, 64))
+	c.Header("Profile-Update-Interval", strconv.FormatFloat(conf.DefaultConfig.Provider.UpdateInterval.Hours(), 'f', 2, 64))
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename*=utf-8''%s", url.PathEscape(conf.Filename)))
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", info.CacheFile)
 }

@@ -26,8 +26,7 @@ type PathConfig struct {
 	APIKey       string // API Key
 	Filename     string // 文件名
 
-	Provider ProviderConfig // 提供商相关配置
-	Cache    CacheConfig    // 缓存相关配置
+	DefaultConfig *DefaultConfig
 }
 
 func NewConfig() *AppConfig {
@@ -120,19 +119,7 @@ func (a *AppConfig) buildPathForProvider(providerType string, itemList []Provide
 			return errors.Errorf("subscriptions is required, provider type: %s, route_prefix:%s", providerType, item.RoutePrefix)
 		}
 
-		if item.Overrides != nil && item.Overrides.Provider != nil {
-			if item.Overrides.Provider.UpdateInterval != nil && *item.Overrides.Provider.UpdateInterval == 0 {
-				return errors.Errorf("update_interval value cannot be 0, provider type: %s, route_prefix:%s", providerType, item.RoutePrefix)
-			}
-			if item.Overrides.Provider.RequestTimeout != nil && *item.Overrides.Provider.RequestTimeout == 0 {
-				return errors.Errorf("request_timeout value cannot be 0, provider type: %s, route_prefix:%s", providerType, item.RoutePrefix)
-			}
-		}
-		if len(item.Subscriptions) == 0 {
-			return errors.Errorf("subscriptions is required, provider type: %s, route_prefix:%s", providerType, item.RoutePrefix)
-		}
-
-		defaultConfig := a.loadDefaultConfig(item)
+		defaultConfig := a.loadNowConfig(item)
 		for _, sub := range item.Subscriptions {
 			reqPath, err := url.JoinPath(item.RoutePrefix, sub)
 			if err != nil {
@@ -145,12 +132,11 @@ func (a *AppConfig) buildPathForProvider(providerType string, itemList []Provide
 			}
 
 			a.PathToConfig[reqPath] = PathConfig{
-				ProviderType: providerType,
-				APIID:        item.APIID,
-				APIKey:       item.APIKey,
-				Filename:     sub,
-				Provider:     *defaultConfig.Provider,
-				Cache:        *defaultConfig.Cache,
+				ProviderType:  providerType,
+				APIID:         item.APIID,
+				APIKey:        item.APIKey,
+				Filename:      sub,
+				DefaultConfig: defaultConfig,
 			}
 		}
 	}
@@ -158,36 +144,79 @@ func (a *AppConfig) buildPathForProvider(providerType string, itemList []Provide
 	return nil
 }
 
-func (a *AppConfig) loadDefaultConfig(item ProviderItem) DefaultConfig {
+// 处理缓存配置的覆盖
+func applyCacheOverrides(dst *CacheConfig, src *CacheConfig) {
+	if src == nil {
+		return
+	}
+
+	if src.ResponseTTL != nil {
+		dst.ResponseTTL = src.ResponseTTL
+	}
+
+	if src.FileTTL != nil {
+		dst.FileTTL = src.FileTTL
+	}
+
+	if src.APITTL != nil {
+		dst.APITTL = src.APITTL
+	}
+}
+
+// 处理提供商配置的覆盖
+func applyProviderOverrides(dst *ProviderConfig, src *ProviderConfig) {
+	if src == nil {
+		return
+	}
+
+	if src.UpdateInterval != nil && *src.UpdateInterval != 0 {
+		dst.UpdateInterval = src.UpdateInterval
+	}
+
+	if src.RequestTimeout != nil && *src.RequestTimeout != 0 {
+		dst.RequestTimeout = src.RequestTimeout
+	}
+}
+
+// 处理使用显示配置的覆盖
+func applyUsageDisplayOverrides(dst *UsageDisplayConfig, src *UsageDisplayConfig) {
+	if src == nil || !src.Enable {
+		return
+	}
+
+	dst.Enable = src.Enable
+	dst.Prepend = src.Prepend
+
+	if src.TrafficFormat != "" {
+		dst.TrafficFormat = src.TrafficFormat
+	}
+
+	if src.TrafficUnit != "" {
+		dst.TrafficUnit = src.TrafficUnit
+	}
+
+	if src.ExpireFormat != "" {
+		dst.ExpireFormat = src.ExpireFormat
+	}
+}
+
+func (a *AppConfig) loadNowConfig(item ProviderItem) *DefaultConfig {
+	res := &DefaultConfig{
+		Cache:        new(CacheConfig),
+		Provider:     new(ProviderConfig),
+		UsageDisplay: new(UsageDisplayConfig),
+	}
+
+	*res.Cache = *a.Defaults.Cache
+	*res.Provider = *a.Defaults.Provider
+	*res.UsageDisplay = *a.Defaults.UsageDisplay
+
 	if item.Overrides == nil {
-		return a.Defaults
+		return res
 	}
 
-	overrides := item.Overrides
-	res := a.Defaults
-	if overrides.Cache != nil {
-		if overrides.Cache.ResponseTTL != nil {
-			res.Cache.ResponseTTL = overrides.Cache.ResponseTTL
-		}
-
-		if overrides.Cache.FileTTL != nil {
-			res.Cache.FileTTL = overrides.Cache.FileTTL
-		}
-
-		if overrides.Cache.APITTL != nil {
-			res.Cache.APITTL = overrides.Cache.APITTL
-		}
-	}
-
-	if overrides.Provider != nil {
-		if overrides.Provider.UpdateInterval != nil {
-			res.Provider.UpdateInterval = overrides.Provider.UpdateInterval
-		}
-
-		if overrides.Provider.RequestTimeout != nil {
-			res.Provider.RequestTimeout = overrides.Provider.RequestTimeout
-		}
-	}
-
+	applyCacheOverrides(res.Cache, item.Overrides.Cache)
+	applyProviderOverrides(res.Provider, item.Overrides.Provider)
+	applyUsageDisplayOverrides(res.UsageDisplay, item.Overrides.UsageDisplay)
 	return res
 }

@@ -29,14 +29,14 @@ type LogConfig struct {
 }
 
 type GlobalConfig struct {
-	Storage      StorageConfig      `mapstructure:"storage"`
-	UsageDisplay UsageDisplayConfig `mapstructure:"usage_display"`
+	Storage StorageConfig `mapstructure:"storage"`
 }
 
 // DefaultConfig 默认配置
 type DefaultConfig struct {
-	Cache    *CacheConfig    `mapstructure:"cache"`
-	Provider *ProviderConfig `mapstructure:"provider"`
+	Cache        *CacheConfig        `mapstructure:"cache"`
+	Provider     *ProviderConfig     `mapstructure:"provider"`
+	UsageDisplay *UsageDisplayConfig `mapstructure:"usage_display"`
 }
 
 type UsageDisplayConfig struct {
@@ -102,49 +102,69 @@ func (r *GlobalConfig) initDefault() {
 	if r.Storage.SubscriptionDir == "" {
 		r.Storage.SubscriptionDir = "./subscriptions"
 	}
-
-	if r.UsageDisplay.Enable {
-		trafficFormat := r.UsageDisplay.TrafficFormat
-		expireFormat := r.UsageDisplay.ExpireFormat
-		if !bytesize.IsValidUnit(r.UsageDisplay.TrafficUnit) {
-			r.UsageDisplay.TrafficUnit = "G"
-		}
-
-		if !strings.Contains(trafficFormat, "{{.total}}") && !strings.Contains(trafficFormat, "{{.used}}") {
-			r.UsageDisplay.TrafficFormat = "⛽ 已用流量 {{.used}} / {{.total}}"
-		}
-
-		// year, month, day, hour, minute, second
-
-		if !strings.Contains(expireFormat, "{{.year}}") && !strings.Contains(expireFormat, "{{month}}") &&
-			!strings.Contains(expireFormat, "{{.day}}") && !strings.Contains(expireFormat, "{{.hour}}") &&
-			!strings.Contains(expireFormat, "{{.minute}}") && !strings.Contains(expireFormat, "{{.second}}") {
-			r.UsageDisplay.ExpireFormat = "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
-		}
-	}
 }
 
 func (r *DefaultConfig) initDefault() {
 	if r.Cache == nil {
-		zero := time.Duration(0)
-		responseTTL := time.Minute
-		r.Cache = &CacheConfig{
-			FileTTL:     &zero,
-			APITTL:      &zero,
-			ResponseTTL: &responseTTL,
-		}
+		r.Cache = new(CacheConfig)
 	}
 
 	if r.Provider == nil {
 		r.Provider = new(ProviderConfig)
 	}
-	if r.Provider.RequestTimeout == nil || *r.Provider.RequestTimeout == 0 {
-		requestTimeout := 10 * time.Second
-		r.Provider.RequestTimeout = &requestTimeout
+
+	if r.UsageDisplay == nil {
+		r.UsageDisplay = new(UsageDisplayConfig)
 	}
 
-	if r.Provider.UpdateInterval == nil || *r.Provider.UpdateInterval == 0 {
+	r.Cache.initDefault()
+	r.Provider.initDefault()
+	r.UsageDisplay.initDefault()
+}
+
+func (r *CacheConfig) initDefault() {
+	zero := time.Duration(0)
+	if r.FileTTL == nil {
+		r.FileTTL = &zero
+	}
+
+	if r.APITTL == nil {
+		r.APITTL = &zero
+	}
+
+	if r.ResponseTTL == nil {
+		responseTTL := time.Minute
+		r.ResponseTTL = &responseTTL
+	}
+}
+
+func (r *ProviderConfig) initDefault() {
+	if r.RequestTimeout == nil || *r.RequestTimeout == 0 {
+		requestTimeout := 10 * time.Second
+		r.RequestTimeout = &requestTimeout
+	}
+
+	if r.UpdateInterval == nil || *r.UpdateInterval == 0 {
 		updateInterval := 24 * time.Hour
-		r.Provider.UpdateInterval = &updateInterval
+		r.UpdateInterval = &updateInterval
+	}
+}
+
+func (r *UsageDisplayConfig) initDefault() {
+	trafficFormat := r.TrafficFormat
+	expireFormat := r.ExpireFormat
+	if !bytesize.IsValidUnit(r.TrafficUnit) {
+		r.TrafficUnit = "G"
+	}
+
+	if !strings.Contains(trafficFormat, "{{.total}}") && !strings.Contains(trafficFormat, "{{.used}}") {
+		r.TrafficFormat = "⛽ 已用流量 {{.used}} / {{.total}}"
+	}
+
+	// year, month, day, hour, minute, second
+	if !strings.Contains(expireFormat, "{{.year}}") && !strings.Contains(expireFormat, "{{month}}") &&
+		!strings.Contains(expireFormat, "{{.day}}") && !strings.Contains(expireFormat, "{{.hour}}") &&
+		!strings.Contains(expireFormat, "{{.minute}}") && !strings.Contains(expireFormat, "{{.second}}") {
+		r.ExpireFormat = "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
 	}
 }
