@@ -129,8 +129,9 @@ providers:
       subscriptions:
         - "1.yaml"
       # 是否需要启用分组展示
-#      usage_display:
-#        enable: true
+#      overrides:
+#        usage_display:
+#          enable: true
 ```
 
 #### 完整配置示例
