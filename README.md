@@ -68,7 +68,7 @@ go run cmd/server/main.go
 go build -o vpsub cmd/server/main.go
 ./vpsub
 ```
-clashvergerev
+
 #### 方式二：Docker部署
 
 ```bash
