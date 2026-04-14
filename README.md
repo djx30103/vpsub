@@ -30,8 +30,10 @@
 |:-------:|:---------:|:---------:|:-------------:|
 | BandwagonHost | ✅ | ✅ | `api_id`: VEID<br>`api_key`: API KEY |
 | RackNerd | ✅ | ✅<br>每月 1 日（美西时区） | `api_id`: API Hash<br>`api_key`: API Key |
-| Passthrough | — | — | 无需 `api_id` / `api_key`，订阅文件原样返回 |
 | 更多服务商 | 🔄 | 🔄 | 敬请期待 |
+| Passthrough * | — | — | `api_id`: 无需<br>`api_key`: 无需 |
+
+> \* `passthrough` 为特殊类型，不调用服务商 API，订阅文件原样返回，不附加任何流量信息。
 
 ## 🔍 工作原理
 
@@ -138,8 +140,10 @@ routes:
 | `providers.<name>.api_id` | 服务商账号标识，各服务商含义不同（`passthrough` 类型无需填写） |
 | `providers.<name>.api_key` | 服务商 API 密钥（`passthrough` 类型无需填写） |
 | `routes[].path` | 对外访问路径，必须以 `/` 开头且唯一 |
-| `routes[].file` | 本地订阅文件路径，相对于 `subscriptions/` 目录 |
+| `routes[].file` | 本地订阅文件路径，相对于 `subscriptions/` 目录，必须使用相对路径，不能使用 `..` 或绝对路径 |
 | `routes[].provider_ref` | 引用的服务商账号名，必须已在 `providers` 中定义 |
+
+> 修改配置文件后需重启服务生效，订阅文件修改后无需重启。
 
 如果只需要将订阅文件原样对外暴露，无需流量信息，可使用 `passthrough` 类型，不需要填写 `api_id` 和 `api_key`：
 
@@ -232,13 +236,6 @@ providers:
 
 - 最小配置示例：[config/config.yml](config/config.yml)
 - 完整配置示例：[config/config.full.yml](config/config.full.yml)
-
-#### 配置要求
-
-- `path` 必须唯一且以 `/` 开头
-- `file` 必须是相对路径，不能使用 `..` 或绝对路径
-- `provider_ref` 必须引用已定义的账号名
-- ⚠️ **修改配置文件后需重启服务生效，订阅文件修改后无需重启**
 
 ### 4. 使用订阅链接
 
