@@ -2,55 +2,67 @@ package bandwagonhost
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 
-	"vpsub/pkg/provider/base"
-
-	"github.com/imroc/req/v3"
-	"github.com/pkg/errors"
+	"github.com/djx30103/vpsub/pkg/provider/base"
 )
 
 type Client struct {
 	veid   string
 	apiKey string
 
-	httpCli *req.Client
+	baseURL string
+	httpCli *http.Client
 }
 
+// New 用于根据账号信息创建 BandwagonHost API 客户端。
+// 参数含义：info 为调用接口所需的认证信息和请求超时配置。
+// 返回值：返回初始化完成的客户端。
 func New(info base.APIRequestInfo) *Client {
 	return &Client{
-		veid:   info.APIID,
-		apiKey: info.APIKey,
-		httpCli: req.C().
-			SetTimeout(info.RequestTimeout).
-			SetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"),
+		veid:    info.APIID,
+		apiKey:  info.APIKey,
+		baseURL: "https://api.64clouds.com",
+		httpCli: &http.Client{
+			Timeout: info.RequestTimeout,
+		},
 	}
 }
 
+// GetServiceInfo 用于查询 BandwagonHost 当前服务的流量使用情况。
+// 参数含义：ctx 为本次请求的上下文，用于控制超时和取消。
+// 返回值：返回统一格式的流量信息；若请求或解析失败则返回错误。
 func (c *Client) GetServiceInfo(ctx context.Context) (*base.APIResponseInfo, error) {
-	resp, err := c.httpCli.R().SetContext(ctx).
-		SetQueryParam("veid", c.veid).
-		SetQueryParam("api_key", c.apiKey).
-		Get("https://api.64clouds.com/v1/getServiceInfo")
+	reqURL, err := url.Parse(c.baseURL + "/v1/getServiceInfo")
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get service info")
+		return nil, fmt.Errorf("failed to parse service info url: %w", err)
 	}
+	query := reqURL.Query()
+	query.Set("veid", c.veid)
+	query.Set("api_key", c.apiKey)
+	reqURL.RawQuery = query.Encode()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("failed to get service info, status code: %d", resp.StatusCode)
+	body, err := base.DoGetRequest(ctx, c.httpCli, reqURL.String())
+	if err != nil {
+		return nil, err
 	}
 
 	info := new(ServiceInfo)
-	err = resp.UnmarshalJson(info)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal service info")
+	if err := json.Unmarshal(body, info); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal service info: %w", err)
 	}
 
+	// BandwagonHost API 只返回总用量，不区分上传和下载，因此各取一半作为近似值。
 	half := info.DataCounter * info.MonthlyDataMultiplier / 2
 	total := info.PlanMonthlyData * info.MonthlyDataMultiplier
 
-	if total == 0 || half == 0 {
-		return nil, errors.New("failed to get service info, total or used is 0")
+	// 总量为 0 代表套餐信息异常；已用流量为 0 则是正常场景，例如新开机或刚重置流量。
+	if total <= 0 {
+		return nil, errors.New("failed to get service info, total is 0")
 	}
 
 	return &base.APIResponseInfo{

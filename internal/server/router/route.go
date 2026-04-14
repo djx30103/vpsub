@@ -1,12 +1,11 @@
 package router
 
 import (
-	"vpsub/pkg/config"
-
-	"vpsub/internal/handler"
-	"vpsub/pkg/log"
-
 	"github.com/gin-gonic/gin"
+
+	"github.com/djx30103/vpsub/internal/config"
+	"github.com/djx30103/vpsub/internal/handler"
+	"github.com/djx30103/vpsub/pkg/log"
 )
 
 type Router struct {

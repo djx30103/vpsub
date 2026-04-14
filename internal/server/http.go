@@ -6,14 +6,13 @@ import (
 	"net"
 	"net/http"
 
-	"vpsub/pkg/config"
-
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"vpsub/internal/middleware"
-	"vpsub/internal/server/router"
-	"vpsub/pkg/log"
+	"github.com/djx30103/vpsub/internal/config"
+	"github.com/djx30103/vpsub/internal/middleware"
+	"github.com/djx30103/vpsub/internal/server/router"
+	"github.com/djx30103/vpsub/pkg/log"
 )
 
 type HTTPServer struct {
@@ -43,7 +42,6 @@ func NewHTTPServer(
 	conf *config.AppConfig,
 	router *router.Router,
 ) *HTTPServer {
-
 	gin.SetMode(conf.AppMode)
 	r := gin.New()
 	r.Use(

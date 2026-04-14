@@ -1,0 +1,121 @@
+# 应用模式：release、debug（默认 release）
+app_mode: release
+
+# 服务器配置
+server:
+  # HTTP 服务监听地址和端口号 (格式: [IP]:PORT, 示例: :30103, 127.0.0.1:30103)
+  listen_addr: :30103
+  # 请求超时时间
+  timeout: 30s
+
+# 日志配置
+log:
+  # 日志级别: debug, info, warn, error
+  level: warn
+
+# 全局配置项
+global:
+  storage:
+    # 订阅文件存储主目录
+    subscription_dir: ./subscriptions
+
+# 默认配置参数
+defaults:
+  provider:
+    # 服务商 API 响应缓存时间，0 表示不缓存
+    api_ttl: 300s
+    # API 请求超时时间限制
+    request_timeout: 10s
+    # 客户端提示的订阅更新间隔
+    update_interval: 24h
+
+  usage_display:
+    # 是否在代理分组中显示用户流量和到期信息
+    enable: false
+    # 信息分组在列表中的位置 (true: 置顶显示, false: 末尾显示)
+    prepend: false
+    # 流量使用情况的显示模板 (必须同时包含 {{.used}} 与 {{.total}})
+    traffic_format: "⛽ 已用流量 {{.used}} / {{.total}}"
+    # 流量显示单位 (可选: K, M, G, T)
+    traffic_unit: "G"
+    # 重置时间的显示模板 (至少包含一个日期变量，仅支持 {{.year}}/{{.month}}/{{.day}})
+    reset_time_format: "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
+
+# VPS 服务商账号配置
+providers:
+  # 账号名可自定义，供 routes.provider_ref 引用
+  hk-bwh:
+    type: bandwagonhost
+    api_id: "VEID"
+    api_key: "API KEY"
+
+  us-bwh:
+    type: bandwagonhost
+    api_id: "VEID"
+    api_key: "API KEY"
+    overrides:
+      api_ttl: 120s
+      request_timeout: 15s
+      update_interval: 12h
+
+  racknerd-main:
+    type: racknerd
+    api_id: "API Hash"
+    api_key: "API Key"
+
+  # passthrough 不调用任何外部 API，无需 api_id 和 api_key，订阅文件原样返回。
+  static-sub:
+    type: passthrough
+
+# 对外暴露的订阅路由配置
+routes:
+  -
+    # path 是完整对外路径，这里演示带文件后缀的访问路径
+    path: "/route_prefix1/b1.yaml"
+    # file 是 subscriptions 目录下的相对文件路径，这里演示纯文件名
+    file: "b1.yaml"
+    provider_ref: "hk-bwh"
+    access_control:
+      user_agent: "ClashX"
+
+  -
+    # path 是完整对外路径，这里演示不带文件后缀的访问路径
+    path: "/route_prefix1/b2"
+    # file 是 subscriptions 目录下的相对文件路径，这里演示带相对子目录的写法
+    file: "hk/b2.yaml"
+    provider_ref: "hk-bwh"
+    access_control:
+      user_agent: "ClashX"
+
+  -
+    # path 是完整对外路径，这里演示不带文件后缀的访问路径
+    path: "/route_prefix2/b3"
+    # file 是 subscriptions 目录下的相对文件路径，这里演示纯文件名
+    file: "b3.yaml"
+    provider_ref: "us-bwh"
+    # 这里演示 route 级覆写能力；未列出的字段继续继承 defaults.usage_display
+    usage_display:
+      enable: true
+      prepend: true
+      traffic_unit: "M"
+      reset_time_format: "📅 重置日期 {{.year}}/{{.month}}/{{.day}}"
+
+  -
+    # path 是完整对外路径，这里演示带文件后缀的访问路径
+    path: "/route_prefix2/b4.yaml"
+    # file 是 subscriptions 目录下的相对文件路径，这里演示带相对子目录的写法
+    file: "us/b4.yaml"
+    provider_ref: "us-bwh"
+
+  -
+    # path 是完整对外路径，这里演示带文件后缀的访问路径
+    path: "/route_prefix3/rn.yaml"
+    # file 是 subscriptions 目录下的相对文件路径，这里演示纯文件名
+    file: "rn.yaml"
+    provider_ref: "racknerd-main"
+
+  -
+    # passthrough 示例：无流量信息，订阅文件原样返回
+    path: "/route_prefix4/static.yaml"
+    file: "static.yaml"
+    provider_ref: "static-sub"

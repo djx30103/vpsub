@@ -11,7 +11,8 @@ run:
 .PHONY: lint
 # 代码检查
 lint:
-	golangci-lint run -v -c ./.golangci.yml --timeout=10m
+	mise x golangci-lint@2.11.4 -- golangci-lint fmt
+	mise x golangci-lint@2.11.4 -- golangci-lint run -v --timeout=10m  --allow-parallel-runners
 
 .PHONY: build
 # 编译

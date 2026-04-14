@@ -13,10 +13,14 @@
 ### 🔄 流量管理
 - **实时监控**: 获取VPS流量使用数据，包括已用流量、剩余流量、总流量和重置时间
 - **订阅集成**: 自动将流量信息注入到订阅文件，支持在代理软件中直观显示
+- **灵活展示**: 支持自定义流量单位、日期格式和分组位置
 
 ### 🛠 系统特性
-- **多账户管理**: 支持多个VPS账号和订阅文件的统一管理
-- **高效缓存**: 多级缓存机制，智能避免API限速
+- **两层配置模型**: `providers` 管账号，`routes` 管路径，职责分离，多账号场景更易维护
+- **路径与文件解耦**: 订阅链接与本地文件名独立，支持更简洁的访问路径
+- **多账号复用**: 同一账号可被多个路由引用，无需重复填写
+- **全局默认与局部覆盖**: 先设全局默认，再按路由单独覆盖缓存、超时、流量展示等
+- **高效缓存**: 多级缓存机制，智能避免API限速，接口异常时降级返回原始文件
 - **容器部署**: 支持Docker容器化部署，便于维护和迁移
 - **多服务商**: 支持多种VPS服务商API，持续扩展中
 
@@ -25,21 +29,21 @@
 | <div align="center">服务商</div> | <div align="center">流量查询</div> | <div align="center">重置日期</div> | <div align="center">配置参数映射</div> |
 |:-------:|:---------:|:---------:|:-------------:|
 | BandwagonHost | ✅ | ✅ | `api_id`: VEID<br>`api_key`: API KEY |
-| RackNerd | ✅ | ❌ | `api_id`: API Hash<br>`api_key`: API Key |
+| RackNerd | ✅ | ✅<br>每月 1 日（美西时区） | `api_id`: API Hash<br>`api_key`: API Key |
+| Passthrough | — | — | 无需 `api_id` / `api_key`，订阅文件原样返回 |
 | 更多服务商 | 🔄 | 🔄 | 敬请期待 |
-
-</div>
 
 ## 🔍 工作原理
 
 VPSub 通过以下步骤处理每个订阅请求：
-```
-1. 读取配置文件中的VPS服务商API凭证
-2. 调用相应服务商的API获取流量使用情况
-3. 读取订阅文件内容
-4. 将流量信息注入到HTTP响应头中或添加到组中
-5. 返回订阅文件内容，同时包含流量信息
-```
+
+1. 根据请求路径匹配对应的 `route` 配置
+2. 通过 `provider_ref` 找到对应的服务商账号
+3. 调用服务商 API 获取流量数据（带缓存机制）
+4. 读取 `route` 中指定的本地订阅文件
+5. 将流量信息写入 HTTP 响应头
+6. 如果启用 `usage_display`，将流量信息追加到订阅分组中
+7. 返回处理后的订阅内容（API 异常时降级返回原始文件）
 
 ## 使用效果
 
@@ -62,10 +66,10 @@ git clone https://github.com/djx30103/vpsub.git
 cd vpsub
 
 # 直接运行
-go run cmd/server/main.go
+go run ./cmd/server
 
 # 或者构建后运行
-go build -o vpsub cmd/server/main.go
+go build -o vpsub ./cmd/server
 ./vpsub
 ```
 
@@ -103,195 +107,152 @@ services:
 docker-compose up -d
 ```
 
-### 2. 准备订阅文件
+### 2. 目录结构
 
-将你的代理配置文件放入`subscriptions`目录。
+- **config**: 存放配置文件 `config.yml`
+- **subscriptions**: 存放订阅文件（支持子目录组织）
 
-### 3. 修改配置文件
+### 3. 配置文件
 
-编辑`config/config.yml`文件，添加你的API凭证和订阅文件信息：
+#### 基础配置
 
-#### 最小配置示例
-
-以下是最小配置示例，其他配置项将使用系统默认值：
+`providers` 定义服务商账号，`routes` 定义订阅路径并引用账号：
 
 ```yaml
-# VPS服务商配置列表
 providers:
-  # BandwagonHost 服务配置
-  bandwagonhost:
-    # API路由前缀
-    - route_prefix: "/2e9d2eee7d2e40d399998c85853f68f4"
-      # API凭证
-      api_id: "VEID"
-      api_key: "API KEY"
-      # 关联的订阅配置文件列表
-      subscriptions:
-        - "1.yaml"
-      # 是否需要启用分组展示
-#      overrides:
-#        usage_display:
-#          enable: true
+  hk-bwh:
+    type: bandwagonhost
+    api_id: "VEID"
+    api_key: "API KEY"
+
+routes:
+  - path: "/client-a"
+    file: "hk/proxy.yaml"
+    provider_ref: "hk-bwh"
 ```
 
-#### 完整配置示例
+| 配置项 | 说明 |
+|:------|:-----|
+| `providers.<name>` | 服务商账号，名称自定义，供 `provider_ref` 引用 |
+| `providers.<name>.type` | 服务商类型，见[支持的服务商](#-支持的服务商) |
+| `providers.<name>.api_id` | 服务商账号标识，各服务商含义不同（`passthrough` 类型无需填写） |
+| `providers.<name>.api_key` | 服务商 API 密钥（`passthrough` 类型无需填写） |
+| `routes[].path` | 对外访问路径，必须以 `/` 开头且唯一 |
+| `routes[].file` | 本地订阅文件路径，相对于 `subscriptions/` 目录 |
+| `routes[].provider_ref` | 引用的服务商账号名，必须已在 `providers` 中定义 |
 
-如果你需要更细致的控制，可以参考以下完整配置：
+如果只需要将订阅文件原样对外暴露，无需流量信息，可使用 `passthrough` 类型，不需要填写 `api_id` 和 `api_key`：
 
 ```yaml
+providers:
+  static-sub:
+    type: passthrough
 
-# 应用模式：release、debug（默认release）
-app_mode: release
+routes:
+  - path: "/client-b"
+    file: "static.yaml"
+    provider_ref: "static-sub"
+```
 
-# 服务器配置
-server:
-  # HTTP服务监听地址和端口号 (格式: [IP]:PORT, 示例: :30103, 127.0.0.1:30103)
-  listen_addr: :30103
-  # 请求超时时间
-  timeout: 30s
+#### 流量展示（usage_display）
 
-# 日志配置
-log:
-  # 日志级别: debug, info, warn, error
-  level: warn
+启用后，会在订阅分组中追加流量和重置日期信息：
 
-# 全局配置项
-global:
-  # 文件存储相关配置
-  storage:
-    # 订阅文件存储主目录
-    subscription_dir: ./subscriptions
-
-# 默认配置参数 (各服务商可在 overrides 中覆盖这些设置)
+```yaml
 defaults:
-  # 缓存策略配置
-  # 缓存分为三个层次：
-  # 1. file_ttl: 订阅文件的原始内容缓存
-  # 2. api_ttl: 服务商 API 返回数据的缓存
-  # 3. response_ttl: 最终生成的订阅内容缓存（合并了文件内容和 API 数据）
-  # 所有缓存均按请求路径（path）进行存储，相同路径的请求会复用缓存内容
-  cache:
-    # 订阅文件缓存时间，0表示不缓存
-    # 按请求路径缓存，文件内容缓存后，修改文件需等待缓存失效才能生效
-    file_ttl: 0
-
-    # API响应缓存时间，0表示不缓存
-    # 按请求路径缓存，建议开启以避免触发服务商限速
-    # 如果配置了 response_ttl，可以不配置此项
-    api_ttl: 0
-
-    # 最终响应缓存时间，0表示不缓存
-    # 按请求路径缓存最终的订阅内容（文件内容 + API响应结果的组合）
-    response_ttl: 60s
-
-  # 服务商通用参数配置
-  provider:
-    # API请求超时时间限制
-    request_timeout: 10s
-    # 数据更新间隔
-    update_interval: 24h
-
-  # 用户流量统计与到期时间显示配置
   usage_display:
-    # 是否在代理分组中显示用户流量和到期信息
-    enable: false
-    # 信息分组在列表中的位置 (true: 置顶显示, false: 末尾显示)
-    prepend: false
-    # 流量使用情况的显示模板 (支持变量: {{.used}} - 已用流量, {{.total}} - 总流量)
+    enable: true
+    prepend: false                                    # true: 置顶，false: 末尾
     traffic_format: "⛽ 已用流量 {{.used}} / {{.total}}"
-    # 流量显示单位 (可选: B, K, M, G, T)
-    traffic_unit: "G"
-    # 重置日期的显示模板 (支持变量: {{.year}}-年, {{.month}}-月, {{.day}}-日, {{.hour}}-时, {{.minute}}-分, {{.second}}-秒)
-    expire_format: "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
-
-# VPS服务商配置列表
-providers:
-  # BandwagonHost 服务配置
-  bandwagonhost:
-    # API路由前缀
-    - route_prefix: "/route_prefix1"
-      # API凭证
-      api_id: "VEID"
-      api_key: "API KEY"
-      # 关联的订阅配置文件列表
-      subscriptions:
-        - "b1.yaml"
-        - "b2.yaml"
-
-    - route_prefix: "/route_prefix2"
-      # API凭证
-      api_id: "VEID"
-      api_key: "API KEY"
-      # 关联的订阅配置文件列表
-      subscriptions:
-        - "b3.yaml"
-        - "b4.yaml"
-      # 实例特定的配置覆盖
-      overrides:
-        cache:
-          file_ttl: 30s
-          api_ttl: 60s
-          response_ttl: 0
-        provider:
-          request_timeout: 10s
-          update_interval: 24h
-        usage_display:
-          enable: true
-          prepend: true
-          traffic_format: "⛽ 已用流量 {{.used}} / {{.total}}"
-          traffic_unit: "M"
-          expire_format: "📅 重置日期 {{.year}}/{{.month}}/{{.day}}"
-
-  # RackNerd 服务配置
-  racknerd:
-    - route_prefix: "/route_prefix3"
-      api_id: "API Hash"
-      api_key: "API Key"
-      # 关联的订阅配置文件列表
-      subscriptions:
-        - "rn.yaml"
-
-
+    traffic_unit: "G"                                 # 可选: K、M、G、T
+    reset_time_format: "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
 ```
+
+**模板变量说明：**
+
+| 变量 | 用途 | 所属字段 |
+|:-----|:-----|:--------|
+| `{{.used}}` | 已用流量 | `traffic_format` |
+| `{{.total}}` | 总流量 | `traffic_format` |
+| `{{.year}}` | 重置年份 | `reset_time_format` |
+| `{{.month}}` | 重置月份 | `reset_time_format` |
+| `{{.day}}` | 重置日期 | `reset_time_format` |
+
+> `traffic_format` 必须同时包含 `{{.used}}` 和 `{{.total}}`；`reset_time_format` 至少包含一个日期变量，且只支持 `{{.year}}`、`{{.month}}`、`{{.day}}`。
+
+也可以在单个 `route` 中覆盖，未覆盖的字段继续继承 `defaults`：
+
+```yaml
+routes:
+  - path: "/client-a"
+    file: "hk/proxy.yaml"
+    provider_ref: "hk-bwh"
+    usage_display:
+      enable: true
+      prepend: true
+      traffic_unit: "M"
+```
+
+#### 访问控制（access_control）
+
+可按 `User-Agent` 限制订阅路径的访问来源，未配置时不校验：
+
+```yaml
+routes:
+  - path: "/client-a"
+    file: "hk/proxy.yaml"
+    provider_ref: "hk-bwh"
+    access_control:
+      user_agent: "ClashX"   # 仅允许 User-Agent 与 "ClashX" 完全一致的请求
+```
+
+#### 全局默认与覆写（defaults & overrides）
+
+在 `defaults` 中设置全局默认值，在单个 `provider` 的 `overrides` 中按需覆写：
+
+```yaml
+defaults:
+  provider:
+    api_ttl: 300s          # 服务商 API 缓存时间，0 表示不缓存
+    request_timeout: 10s   # API 请求超时
+    update_interval: 24h   # 客户端订阅更新间隔
+
+providers:
+  us-bwh:
+    type: bandwagonhost
+    api_id: "VEID"
+    api_key: "API KEY"
+    overrides:             # 覆盖该账号的默认值
+      api_ttl: 120s
+      request_timeout: 15s
+      update_interval: 12h
+```
+
+#### 完整配置参考
+
+- 最小配置示例：[config/config.yml](config/config.yml)
+- 完整配置示例：[config/config.full.yml](config/config.full.yml)
+
+#### 配置要求
+
+- `path` 必须唯一且以 `/` 开头
+- `file` 必须是相对路径，不能使用 `..` 或绝对路径
+- `provider_ref` 必须引用已定义的账号名
+- ⚠️ **修改配置文件后需重启服务生效，订阅文件修改后无需重启**
 
 ### 4. 使用订阅链接
 
-#### 订阅链接格式
+`path` 即完整对外路径，订阅链接格式为：
 
 ```
-http://your-server:30103/<route_prefix>/<subscription_file>
+http://your-server:30103<path>
 ```
 
-#### 参数说明
+例如 `path: "/client-a"` 对应：
 
-- `your-server`: 你的服务器地址
-- `route_prefix`: 配置文件中设置的路由前缀
-- `subscription_file`: 订阅文件名称（例如：bwg.yaml）
-
-#### 示例
-
-如果你的配置如下：
-```yaml
-providers:
-  bandwagonhost:
-    - route_prefix: "/bwh01"
-      subscriptions:
-        - "my-proxy.yaml"
 ```
-
-那么你的订阅链接就是：
+http://your-server:30103/client-a
 ```
-http://your-server:30103/bwh01/my-proxy.yaml
-```
-
-#### 注意事项
-
-- 每个`route_prefix`必须是唯一的，不同账号不能使用相同的路由前缀
-- 订阅链接末尾的文件名必须与配置文件中的`subscriptions`列表中的文件名完全匹配
-- 确保你的服务器和端口（默认30103）可以正常访问
-- ⚠️ 修改配置文件后需要重启服务才能生效
-
-将生成的订阅链接添加到你的代理客户端即可使用。
 
 
 ## 📄 许可证

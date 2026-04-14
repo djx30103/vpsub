@@ -1,12 +1,15 @@
 package main
 
 import (
+	"flag"
+	"fmt"
+	"io"
 	"os"
 
-	"vpsub/internal/server"
-	"vpsub/pkg/app"
-	"vpsub/pkg/config"
-	"vpsub/pkg/log"
+	"github.com/djx30103/vpsub/internal/config"
+	"github.com/djx30103/vpsub/internal/server"
+	"github.com/djx30103/vpsub/pkg/app"
+	"github.com/djx30103/vpsub/pkg/log"
 )
 
 var (
@@ -16,7 +19,8 @@ var (
 )
 
 func newApp(
-	hs *server.HTTPServer) *app.App {
+	hs *server.HTTPServer,
+) *app.App {
 	return app.New(
 		app.ID(id),
 		app.Name(appName),
@@ -39,7 +43,21 @@ func newApp(
 
 // @BasePath	/
 func main() {
-	conf := config.NewConfig()
+	configPath, err := config.ResolveConfigPath(flag.CommandLine, os.Args[1:], os.Getenv)
+	if err != nil {
+		panic(err)
+	}
+	printConfigPath(os.Stderr, configPath)
+
+	rootConfig, err := config.Load(configPath)
+	if err != nil {
+		panic(err)
+	}
+
+	conf, err := config.BuildRuntime(rootConfig)
+	if err != nil {
+		panic(err)
+	}
 
 	logger := log.NewLog(conf.Log)
 
@@ -53,4 +71,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+// printConfigPath 用于在日志系统初始化前输出实际使用的配置文件路径。
+// 参数含义：writer 为输出目标；configPath 为最终使用的配置文件路径。
+// 返回值：无。
+func printConfigPath(writer io.Writer, configPath string) {
+	_, _ = fmt.Fprintf(writer, "using config path: %s\n", configPath)
 }

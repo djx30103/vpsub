@@ -2,17 +2,17 @@ package xemoji
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	emoji "github.com/Andrew-M-C/go.emoji"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 )
 
 func EncodeEmojiToID(allSettings map[string]any) (map[string]string, error) {
 	by, err := json.Marshal(allSettings)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal allSettings")
+		return nil, fmt.Errorf("failed to marshal allSettings: %w", err)
 	}
 
 	data := string(by)
@@ -33,7 +33,7 @@ func EncodeEmojiToID(allSettings map[string]any) (map[string]string, error) {
 
 	err = json.Unmarshal([]byte(final), &allSettings)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal allSettings")
+		return nil, fmt.Errorf("failed to unmarshal allSettings: %w", err)
 	}
 
 	return emojiKv, nil

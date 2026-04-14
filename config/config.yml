@@ -1,116 +1,32 @@
-# 应用模式：release、debug（默认release）
-app_mode: release
-
-# 服务器配置
-server:
-  # HTTP服务监听地址和端口号 (格式: [IP]:PORT, 示例: :30103, 127.0.0.1:30103)
-  listen_addr: :30103
-  # 请求超时时间
-  timeout: 30s
-
-# 日志配置
-log:
-  # 日志级别: debug, info, warn, error
-  level: warn
-
-# 全局配置项
-global:
-  # 文件存储相关配置
-  storage:
-    # 订阅文件存储主目录
-    subscription_dir: ./subscriptions
-
-# 默认配置参数 (各服务商可在 overrides 中覆盖这些设置)
-defaults:
-  # 缓存策略配置
-  # 缓存分为三个层次：
-  # 1. file_ttl: 订阅文件的原始内容缓存
-  # 2. api_ttl: 服务商 API 返回数据的缓存
-  # 3. response_ttl: 最终生成的订阅内容缓存（合并了文件内容和 API 数据）
-  # 所有缓存均按请求路径（path）进行存储，相同路径的请求会复用缓存内容
-  cache:
-    # 订阅文件缓存时间，0表示不缓存
-    # 按请求路径缓存，文件内容缓存后，修改文件需等待缓存失效才能生效
-    file_ttl: 0
-
-    # API响应缓存时间，0表示不缓存
-    # 按请求路径缓存，建议开启以避免触发服务商限速
-    # 如果配置了 response_ttl，可以不配置此项
-    api_ttl: 0
-
-    # 最终响应缓存时间，0表示不缓存
-    # 按请求路径缓存最终的订阅内容（文件内容 + API响应结果的组合）
-    response_ttl: 60s
-
-  # 服务商通用参数配置
-  provider:
-    # API请求超时时间限制
-    request_timeout: 10s
-    # 数据更新间隔
-    update_interval: 24h
-
-  # 用户流量统计与到期时间显示配置
-  usage_display:
-    # 是否在代理分组中显示用户流量和到期信息
-    enable: false
-    # 信息分组在列表中的位置 (true: 置顶显示, false: 末尾显示)
-    prepend: false
-    # 流量使用情况的显示模板 (支持变量: {{.used}} - 已用流量, {{.total}} - 总流量)
-    traffic_format: "⛽ 已用流量 {{.used}} / {{.total}}"
-    # 流量显示单位 (可选: B, K, M, G, T)
-    traffic_unit: "G"
-    # 重置日期的显示模板 (支持变量: {{.year}}-年, {{.month}}-月, {{.day}}-日, {{.hour}}-时, {{.minute}}-分, {{.second}}-秒)
-    expire_format: "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
-
-# VPS服务商配置列表
+# 默认配置参数；不填写时使用程序内置默认值
+# defaults:
+#   provider:
+#     # 服务商 API 响应缓存时间，0 表示不缓存
+#     api_ttl: 300s
+#     # API 请求超时时间限制
+#     request_timeout: 10s
+#     # 客户端提示的订阅更新间隔
+#     update_interval: 24h
+#
+# VPS 服务商账号配置
 providers:
-  # BandwagonHost 服务配置
-  bandwagonhost:
-    # API路由前缀
-    - route_prefix: "/route_prefix1"
-      # API凭证
-      api_id: "VEID"
-      api_key: "API KEY"
-      # 关联的订阅配置文件列表
-      subscriptions:
-        - "b1.yaml"
-        - "b2.yaml"
+  # 账号名可自定义，供 routes.provider_ref 引用
+  hk-bwh:
+    type: bandwagonhost
+    api_id: "VEID"
+    api_key: "API KEY"
 
-    - route_prefix: "/route_prefix2"
-      # API凭证
-      api_id: "VEID"
-      api_key: "API KEY"
-      # 关联的订阅配置文件列表
-      subscriptions:
-        - "b2.yaml"
-        - "b3.yaml"
-      # 实例特定的配置覆盖
-      overrides:
-        cache:
-          file_ttl: 30s
-          api_ttl: 60s
-          response_ttl: 0
-        provider:
-          request_timeout: 10s
-          update_interval: 24h
-        # 用户流量统计与到期时间显示配置
-        usage_display:
-          # 是否在代理分组中显示用户流量和到期信息
-          enable: true
-          # 信息分组在列表中的位置 (true: 置顶显示, false: 末尾显示)
-          prepend: true
-          # 流量使用情况的显示模板 (支持变量: {{.used}} - 已用流量, {{.total}} - 总流量)
-          traffic_format: "⛽ 已用流量 {{.used}} / {{.total}}"
-          # 流量显示单位 (可选: B, K, M, G, T)
-          traffic_unit: "M"
-          # 重置日期的显示模板 (支持变量: {{.year}}-年, {{.month}}-月, {{.day}}-日, {{.hour}}-时, {{.minute}}-分, {{.second}}-秒)
-          expire_format: "📅 重置日期 {{.year}}/{{.month}}/{{.day}}"
-
-  # RackNerd 服务配置
-  racknerd:
-    - route_prefix: "/route_prefix3"
-      api_id: "API Hash"
-      api_key: "API Key"
-      # 关联的订阅配置文件列表
-      subscriptions:
-        - "rn.yaml"
+# 对外暴露的订阅路由配置
+routes:
+  -
+    # path 是完整对外路径，默认示例使用不带文件后缀的安装后访问路径
+    path: "/route_prefix1/b1"
+    # file 是 subscriptions 目录下的相对文件路径
+    file: "b1.yaml"
+    provider_ref: "hk-bwh"
+    # 按需设置访问约束；未配置时不校验
+    # access_control:
+    #   user_agent: "ClashX"
+    # 按需覆盖默认行为，不配置时使用系统默认值
+    # usage_display:
+    #   enable: true

@@ -1,32 +1,22 @@
 package handler
 
 import (
-	"bytes"
-	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
-	"path/filepath"
-	"slices"
 	"strconv"
-	"strings"
+	"sync"
 	"time"
-
-	"vpsub/pkg/provider"
-	"vpsub/pkg/provider/base"
-	"vpsub/pkg/xemoji"
 
 	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
-	"github.com/pkg/errors"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
-	"gopkg.in/yaml.v2"
 
-	"vpsub/pkg/bytesize"
-	"vpsub/pkg/config"
+	"github.com/djx30103/vpsub/internal/config"
+	"github.com/djx30103/vpsub/pkg/provider"
+	"github.com/djx30103/vpsub/pkg/provider/base"
 )
 
 type SubscribeHandler struct {
@@ -34,14 +24,22 @@ type SubscribeHandler struct {
 	sfGroup   *singleflight.Group
 	appConfig *config.AppConfig
 
-	cache *gocache.Cache
+	cache     *gocache.Cache
+	fileCache map[string]cachedSubscriptionFile
+	fileMu    sync.RWMutex
 }
 
-type ResponseCacheInfo struct {
-	CacheFile []byte
-	CacheAPI  *base.APIResponseInfo
+// cachedSubscriptionFile 用于缓存订阅文件内容及其文件元信息，避免每次请求都重复读取未变化的文件。
+// 字段含义：content 为文件内容；modTime 为文件最后修改时间；size 为文件大小。
+type cachedSubscriptionFile struct {
+	content []byte
+	modTime time.Time
+	size    int64
 }
 
+// NewSubscribeHandler 用于构造订阅处理器，并初始化去重与内存缓存组件。
+// 参数含义：handler 为基础处理器依赖；appConfig 为应用配置。
+// 返回值：返回可直接注册到路由上的订阅处理器。
 func NewSubscribeHandler(
 	handler *Handler,
 	appConfig *config.AppConfig,
@@ -51,235 +49,79 @@ func NewSubscribeHandler(
 		appConfig: appConfig,
 		sfGroup:   new(singleflight.Group),
 		cache:     gocache.New(gocache.NoExpiration, time.Second),
+		fileCache: make(map[string]cachedSubscriptionFile),
 	}
 }
 
-func createProxyGroup(name string) any {
-	return map[string]any{
-		"name": name,
-		"type": "select",
-		"proxies": []string{
-			"REJECT",
-		},
-	}
-}
-
-func newAppendGroup(apiInfo *base.APIResponseInfo, usageDisplay *config.UsageDisplayConfig) []any {
-	groupList := make([]any, 0, 2)
-	if apiInfo.Expire > 0 {
-		// "📅 重置日期 {{.year}}-{{.month}}-{{.day}}"
-		t := time.Unix(apiInfo.Expire, 0)
-		expireFormat := strings.ReplaceAll(usageDisplay.ExpireFormat, "{{.year}}", t.Format("2006"))
-		expireFormat = strings.ReplaceAll(expireFormat, "{{.month}}", t.Format("01"))
-		expireFormat = strings.ReplaceAll(expireFormat, "{{.day}}", t.Format("02"))
-		expireFormat = strings.ReplaceAll(expireFormat, "{{.hour}}", t.Format("15"))
-		expireFormat = strings.ReplaceAll(expireFormat, "{{.minute}}", t.Format("04"))
-		expireFormat = strings.ReplaceAll(expireFormat, "{{.second}}", t.Format("05"))
-		groupList = append(groupList, createProxyGroup(expireFormat))
-	}
-
-	if apiInfo.Upload > 0 || apiInfo.Download > 0 || apiInfo.Total > 0 {
-		// "⛽ 已用流量 {{.used}} / {{.total}}"
-		trafficFormat := strings.ReplaceAll(usageDisplay.TrafficFormat, "{{.used}}", bytesize.Format(apiInfo.Download+apiInfo.Upload, usageDisplay.TrafficUnit))
-		trafficFormat = strings.ReplaceAll(trafficFormat, "{{.total}}", bytesize.Format(apiInfo.Total, usageDisplay.TrafficUnit))
-		groupList = append(groupList, createProxyGroup(trafficFormat))
-	}
-
-	return groupList
-}
-
-func appendUsageGroups(conf config.PathConfig, info *ResponseCacheInfo) error {
-	if !conf.DefaultConfig.UsageDisplay.Enable {
-		return nil
-	}
-
-	v := viper.New()
-	v.SetConfigType("yaml")
-	err := v.ReadConfig(bytes.NewReader(info.CacheFile))
-	if err != nil {
-		return errors.Wrap(err, "failed to read yaml config")
-	}
-
-	groupList, ok := v.Get("proxy-groups").([]any)
-	if !ok {
-		return errors.New("no proxy-groups found in config")
-	}
-
-	if len(groupList) == 0 {
-		return errors.New("no proxy-groups found in config")
-	}
-
-	appendGroupList := newAppendGroup(info.CacheAPI, conf.DefaultConfig.UsageDisplay)
-	if len(appendGroupList) == 0 {
-		return errors.New("no usage groups found in config")
-	}
-
-	// 插入开头
-	if conf.DefaultConfig.UsageDisplay.Prepend {
-		groupList = slices.Insert(groupList, 0, appendGroupList...)
-	} else {
-		groupList = append(groupList, appendGroupList...)
-	}
-
-	v.Set("proxy-groups", groupList)
-
-	allSettings := v.AllSettings()
-	emojiKv, err := xemoji.EncodeEmojiToID(allSettings)
-	if err != nil {
-		return errors.Wrap(err, "failed to emoji2ID")
-	}
-
-	by, err := yaml.Marshal(allSettings)
-	if err != nil {
-		return errors.Wrap(err, "failed to marshal allSettings")
-	}
-
-	info.CacheFile = xemoji.DecodeEmojiFromID(by, emojiKv)
-
-	return nil
-}
-
-func (h *SubscribeHandler) fetchProviderInfo(ctx context.Context, conf config.PathConfig, cacheKey string) (*base.APIResponseInfo, error) {
-	if *conf.DefaultConfig.Cache.APITTL != 0 {
-		cacheAPIAny, ok := h.cache.Get(cacheKey)
-		if ok {
-			return cacheAPIAny.(*base.APIResponseInfo), nil
-		}
-	}
-
-	client, err := provider.NewProvider(base.APIRequestInfo{
-		APIID:          conf.APIID,
-		APIKey:         conf.APIKey,
-		ProviderType:   conf.ProviderType,
-		RequestTimeout: *conf.DefaultConfig.Provider.RequestTimeout,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to new provider")
-	}
-
-	res, err := client.GetServiceInfo(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get service info")
-	}
-
-	return res, nil
-}
-
-func (h *SubscribeHandler) readSubscriptionFile(_ context.Context, conf config.PathConfig, cacheKey string) ([]byte, error) {
-	if *conf.DefaultConfig.Cache.FileTTL != 0 {
-		cacheFileAny, ok := h.cache.Get(cacheKey)
-		if ok {
-			return cacheFileAny.([]byte), nil
-		}
-	}
-
-	res, err := os.ReadFile(filepath.Join(h.appConfig.Global.Storage.SubscriptionDir, conf.Filename))
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to read file")
-	}
-
-	return res, nil
-}
-
-func (h *SubscribeHandler) prepareSubscriptionResponse(ctx context.Context, conf config.PathConfig, path string) (any, error) {
-
-	responseCacheKey := "response:" + path
-	apiCacheKey := "api:" + path
-	fileKey := "file:" + path
-
-	// 从缓存中读取
-	if *conf.DefaultConfig.Cache.ResponseTTL != 0 {
-		cacheResponse, ok := h.cache.Get(responseCacheKey)
-		if ok {
-			h.logger.WithContext(ctx).Debug("cache hit", zap.String("key", responseCacheKey))
-			return cacheResponse, nil
-		}
-	}
-
-	var (
-		err error
-		res = new(ResponseCacheInfo)
-	)
-
-	// 获取文件信息
-	res.CacheFile, err = h.readSubscriptionFile(ctx, conf, fileKey)
-	if err != nil {
-		h.logger.WithContext(ctx).Error("failed to read file", zap.Error(err))
-		return nil, errors.Wrap(err, "failed to read file")
-	}
-
-	res.CacheAPI, err = h.fetchProviderInfo(ctx, conf, apiCacheKey)
-	if err != nil {
-		h.logger.WithContext(ctx).Error("failed to get service info", zap.Error(err))
-		return nil, errors.Wrap(err, "failed to get service info")
-	}
-
-	// 构建使用情况，忽略错误
-	err = appendUsageGroups(conf, res)
-	if err != nil {
-		h.logger.WithContext(ctx).Error("failed to build usage group", zap.Error(err))
-		//return nil, errors.Wrap(err, "failed to build usage group")
-	}
-
-	if *conf.DefaultConfig.Cache.FileTTL != 0 {
-		h.cache.Set(fileKey, res.CacheFile, *conf.DefaultConfig.Cache.FileTTL)
-	}
-
-	if *conf.DefaultConfig.Cache.APITTL != 0 {
-		h.cache.Set(apiCacheKey, res.CacheAPI, *conf.DefaultConfig.Cache.APITTL)
-	}
-
-	if *conf.DefaultConfig.Cache.ResponseTTL != 0 {
-		h.cache.Set(responseCacheKey, res, *conf.DefaultConfig.Cache.ResponseTTL)
-	}
-
-	return res, nil
-}
-
-func (h *SubscribeHandler) writeSubscriptionResponse(c *gin.Context, conf config.PathConfig, info *ResponseCacheInfo) {
-	cacheAPI := info.CacheAPI
-	subInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", cacheAPI.Upload, cacheAPI.Download, cacheAPI.Total, cacheAPI.Expire)
-
+// writeSubscriptionResponse 用于写入最终订阅响应和相关响应头。
+// 参数含义：c 为 Gin 上下文；conf 为当前路径配置；fileContent 为响应内容；apiInfo 为流量信息。
+// 返回值：无。
+func (h *SubscribeHandler) writeSubscriptionResponse(c *gin.Context, conf config.PathConfig, fileContent []byte, apiInfo *base.APIResponseInfo) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
 
 	c.Header("Subscription-Updated-At", strconv.FormatInt(time.Now().Unix(), 10))
-	c.Header("Subscription-Userinfo", subInfo)
-	c.Header("Profile-Update-Interval", strconv.FormatFloat(conf.DefaultConfig.Provider.UpdateInterval.Hours(), 'f', 2, 64))
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename*=utf-8''%s", url.PathEscape(conf.Filename)))
-	c.Data(http.StatusOK, "text/plain; charset=utf-8", info.CacheFile)
+	c.Header("Profile-Update-Interval", strconv.FormatFloat(conf.ProviderConfig.UpdateInterval.Hours(), 'f', 2, 64))
+	// c.Header("Content-Disposition", fmt.Sprintf("attachment; filename*=utf-8''%s", url.PathEscape(path.Base(conf.File))))
+
+	if apiInfo != nil {
+		subInfo := fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", apiInfo.Upload, apiInfo.Download, apiInfo.Total, apiInfo.Expire)
+		c.Header("Subscription-Userinfo", subInfo)
+	}
+
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", fileContent)
 }
 
+// Get 用于处理订阅下载请求，并在路径命中后返回附带流量信息的订阅内容。
+// 参数含义：c 为 Gin 上下文。
+// 返回值：无。
 func (h *SubscribeHandler) Get(c *gin.Context) {
-	path := c.Param("path")
-	if path == "" {
-		h.logger.Debug("path not found", zap.String("path", path))
+	requestPath := c.Param("path")
+	if requestPath == "" {
+		h.logger.Debug("path not found", zap.String("path", requestPath))
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 
-	conf, ok := h.appConfig.PathToConfig[path]
+	conf, ok := h.appConfig.PathToConfig[requestPath]
 	if !ok {
-		h.logger.Debug("path not found", zap.String("path", path))
+		h.logger.Debug("path not found", zap.String("path", requestPath))
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
 
-	res, err, _ := h.sfGroup.Do(path, func() (interface{}, error) {
-		return h.prepareSubscriptionResponse(c, conf, path)
-	})
+	// 配置了精确 UA 约束时，仅允许匹配的客户端访问，未匹配时直接按不存在处理。
+	if conf.AccessControl != nil && conf.AccessControl.UserAgent != "" && c.GetHeader("User-Agent") != conf.AccessControl.UserAgent {
+		h.logger.Debug("user agent not allowed", zap.String("path", requestPath), zap.String("user_agent", c.GetHeader("User-Agent")))
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
 
+	fileContent, err := h.readSubscriptionFile(conf)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
-
+		h.logger.WithContext(c).Error("failed to read subscription file", zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	info := res.(*ResponseCacheInfo)
-	h.writeSubscriptionResponse(c, conf, info)
+	var apiInfo *base.APIResponseInfo
+	if conf.ProviderType != provider.ProviderType_Passthrough {
+		apiInfo = h.getProviderInfo(c, conf)
+	}
+
+	if conf.UsageDisplay.Enable && apiInfo != nil {
+		updated, appendErr := appendUsageGroups(fileContent, apiInfo, conf.UsageDisplay)
+		if appendErr != nil {
+			h.logger.WithContext(c).Error("failed to append usage groups", zap.Error(appendErr))
+		} else {
+			fileContent = updated
+		}
+	}
+
+	h.writeSubscriptionResponse(c, conf, fileContent, apiInfo)
 }

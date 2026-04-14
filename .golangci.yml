@@ -1,27 +1,50 @@
-linters-settings:
-  gocyclo:
-    # Minimal code complexity to report.
-    # Default: 30 (but we recommend 10-20)
-    min-complexity: 15
+version: "2"
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
-    - gosimple
+    - gocyclo
     - govet
     - ineffassign
-    - staticcheck
-    - typecheck
-    - unused
-    - gocyclo
     - misspell
-    - gofmt
-    - goimports
-# 输出配置选项
-output:
-  # colored-line-number|line-number|json|tab|checkstyle|code-climate, 默认是 "colored-line-number"
-  formats: [{ format: colored-line-number }]
-  # 打印有问题的代码行，默认为true
-  print-issued-lines: true
-  # 在问题文本的末尾打印linter名称，默认为true
-  print-linter-name: true
+    - staticcheck
+    - unused
+  settings:
+    gocyclo:
+      min-complexity: 20
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gofumpt:
+      extra-rules: true
+    gci:
+      sections:
+        - standard
+        - default
+        - localmodule
+      custom-order: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

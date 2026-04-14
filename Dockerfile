@@ -1,5 +1,5 @@
 # 使用多阶段构建
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /build
 
@@ -21,7 +21,7 @@ RUN apk add --no-cache tzdata
 RUN mkdir -p /app/config /app/subscriptions /app/default_config && \
     chmod 755 /app/config /app/subscriptions
 
-# 复制配置文件到默认位置
+# 复制默认最小配置到镜像
 COPY config/config.yml /app/default_config/config.yml
 
 # 设置时区

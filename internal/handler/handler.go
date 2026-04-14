@@ -1,9 +1,8 @@
 package handler
 
 import (
-	"vpsub/pkg/config"
-
-	"vpsub/pkg/log"
+	"github.com/djx30103/vpsub/internal/config"
+	"github.com/djx30103/vpsub/pkg/log"
 )
 
 type Handler struct {

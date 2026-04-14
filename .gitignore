@@ -43,3 +43,10 @@ go.work.sum
 
 subscriptions/*.yaml
 subscriptions/*.yml
+
+config/config.local.yml
+
+.codex
+.claude
+AGENTS.md
+.playwright-mcp/
