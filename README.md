@@ -29,7 +29,7 @@
 | <div align="center">服务商</div> | <div align="center">流量查询</div> | <div align="center">重置日期</div> | <div align="center">配置参数映射</div> |
 |:-------:|:---------:|:---------:|:-------------:|
 | BandwagonHost | ✅ | ✅ | `api_id`: VEID<br>`api_key`: API KEY |
-| RackNerd | ✅ | ✅<br>每月 1 日（美西时区） | `api_id`: API Hash<br>`api_key`: API Key |
+| RackNerd | ✅ | ✅<br>每月 1 日（美西时区）<sup><a href="https://lowendtalk.com/discussion/185395/racknerd-vps-bandwidth">[1]</a></sup> | `api_id`: API Hash<br>`api_key`: API Key |
 | 更多服务商 | 🔄 | 🔄 | 敬请期待 |
 | Passthrough * | — | — | `api_id`: 无需<br>`api_key`: 无需 |
 
@@ -133,15 +133,15 @@ routes:
     provider_ref: "hk-bwh"
 ```
 
-| 配置项 | 说明 |
-|:------|:-----|
-| `providers.<name>` | 服务商账号，名称自定义，供 `provider_ref` 引用 |
-| `providers.<name>.type` | 服务商类型，见[支持的服务商](#-支持的服务商) |
-| `providers.<name>.api_id` | 服务商账号标识，各服务商含义不同（`passthrough` 类型无需填写） |
-| `providers.<name>.api_key` | 服务商 API 密钥（`passthrough` 类型无需填写） |
-| `routes[].path` | 对外访问路径，必须以 `/` 开头且唯一 |
-| `routes[].file` | 本地订阅文件路径，相对于 `subscriptions/` 目录，必须使用相对路径，不能使用 `..` 或绝对路径 |
-| `routes[].provider_ref` | 引用的服务商账号名，必须已在 `providers` 中定义 |
+| 配置项 | 说明                                                                                     |
+|:------|:---------------------------------------------------------------------------------------|
+| `providers.<name>` | 服务商账号，名称自定义，供 `provider_ref` 引用                                                        |
+| `providers.<name>.type` | 服务商类型，见[支持的服务商](#-支持的服务商)；大小写不敏感（如 `bandwagonhost`、`BandwagonHost`、`BANDWAGONHOST` 均可） |
+| `providers.<name>.api_id` | 服务商账号标识，各服务商含义不同（`passthrough` 类型无需填写）                                                 |
+| `providers.<name>.api_key` | 服务商 API 密钥（`passthrough` 类型无需填写）                                                       |
+| `routes[].path` | 对外访问路径，必须以 `/` 开头且唯一                                                                   |
+| `routes[].file` | 本地订阅文件路径，相对于 `subscriptions/` 目录，必须使用相对路径，不能使用 `..` 或绝对路径                              |
+| `routes[].provider_ref` | 引用的服务商账号名，必须已在 `providers` 中定义                                                         |
 
 > 修改配置文件后需重启服务生效，订阅文件修改后无需重启。
 

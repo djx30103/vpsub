@@ -1,13 +1,3 @@
-# 默认配置参数；不填写时使用程序内置默认值
-# defaults:
-#   provider:
-#     # 服务商 API 响应缓存时间，0 表示不缓存
-#     api_ttl: 300s
-#     # API 请求超时时间限制
-#     request_timeout: 10s
-#     # 客户端提示的订阅更新间隔
-#     update_interval: 24h
-#
 # VPS 服务商账号配置
 providers:
   # 账号名可自定义，供 routes.provider_ref 引用
@@ -24,6 +14,7 @@ routes:
     # file 是 subscriptions 目录下的相对文件路径
     file: "b1.yaml"
     provider_ref: "hk-bwh"
+
     # 按需设置访问约束；未配置时不校验
     # access_control:
     #   user_agent: "ClashX"

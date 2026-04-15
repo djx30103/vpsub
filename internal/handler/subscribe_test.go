@@ -34,6 +34,63 @@ func setupSubscribeTestMode() {
 	})
 }
 
+// TestNormalizeRequestPath_TrimsTrailingSlashes 用于验证路径归一化时会删除末尾连续斜杠，同时保留非末尾内容不变。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestNormalizeRequestPath_TrimsTrailingSlashes(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		path string
+		want string
+	}{
+		{
+			name: "single trailing slash",
+			path: "/test.yaml/",
+			want: "/test.yaml",
+		},
+		{
+			name: "multiple trailing slashes",
+			path: "/test.yaml//",
+			want: "/test.yaml",
+		},
+		{
+			name: "nested path single trailing slash",
+			path: "/a/b/c/",
+			want: "/a/b/c",
+		},
+		{
+			name: "nested path multiple trailing slashes",
+			path: "/a/b/c///",
+			want: "/a/b/c",
+		},
+		{
+			name: "only trailing slashes remain empty",
+			path: "//",
+			want: "",
+		},
+		{
+			name: "middle slash preserved",
+			path: "/group//node///",
+			want: "/group//node",
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := normalizeRequestPath(testCase.path)
+			if got != testCase.want {
+				t.Fatalf("normalizeRequestPath(%q) = %q, want %q", testCase.path, got, testCase.want)
+			}
+		})
+	}
+}
+
 // TestGetProviderInfo_UsesCachedAPIWhenProviderFails 用于验证上游接口失败时会回退到最近一次成功的流量缓存。
 // 参数含义：t 为测试上下文。
 // 返回值：无。
@@ -539,10 +596,10 @@ func TestAppendUsageGroups_ReturnsErrorWhenProxyGroupsIsNotSequence(t *testing.T
 	}
 }
 
-// TestAppendUsageGroups_ReturnsErrorWhenNoUsageData 用于验证没有流量也没有重置时间时不会凭空插入展示分组。
+// TestAppendUsageGroups_AppendsGroupsWhenUsageDataIsZero 用于验证流量和到期时间都为零时也会追加展示分组。
 // 参数含义：t 为测试上下文。
 // 返回值：无。
-func TestAppendUsageGroups_ReturnsErrorWhenNoUsageData(t *testing.T) {
+func TestAppendUsageGroups_AppendsGroupsWhenUsageDataIsZero(t *testing.T) {
 	t.Parallel()
 
 	setupSubscribeTestMode()
@@ -554,16 +611,50 @@ func TestAppendUsageGroups_ReturnsErrorWhenNoUsageData(t *testing.T) {
       - REJECT
 `)
 
-	_, err := appendUsageGroups(fileContent, &base.APIResponseInfo{}, newTestUsageDisplayConfig())
-	if err == nil || !strings.Contains(err.Error(), "no usage groups found in config") {
-		t.Fatalf("expected no usage groups error, got: %v", err)
+	updated, err := appendUsageGroups(fileContent, &base.APIResponseInfo{}, newTestUsageDisplayConfig())
+	if err != nil {
+		t.Fatalf("appendUsageGroups returned error: %v", err)
+	}
+
+	got := string(updated)
+	if !strings.Contains(got, "已用流量 0G / 0G") {
+		t.Fatalf("expected zero usage group, got: %s", got)
+	}
+
+	if !strings.Contains(got, "重置日期 1970-01-01") {
+		t.Fatalf("expected zero expire group, got: %s", got)
 	}
 }
 
-// TestAppendUsageGroups_PreservesTopLevelOrder 用于验证追加展示分组后，其他顶层字段仍保持原有顺序和内容。
+// TestGet_AcceptsRequestPathWithMultipleTrailingSlashes 用于验证请求路径带连续尾斜杠时仍能命中已配置路由。
 // 参数含义：t 为测试上下文。
 // 返回值：无。
-func TestAppendUsageGroups_PreservesTopLevelOrder(t *testing.T) {
+func TestGet_AcceptsRequestPathWithMultipleTrailingSlashes(t *testing.T) {
+	t.Parallel()
+
+	setupSubscribeTestMode()
+
+	handler, conf := newTestSubscribeHandler(t)
+	handler.appConfig.PathToConfig = map[string]config.PathConfig{
+		"/test.yaml": conf,
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/test.yaml//", nil)
+	c.Params = gin.Params{{Key: "path", Value: "/test.yaml//"}}
+
+	handler.Get(c)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", recorder.Code)
+	}
+}
+
+// TestAppendUsageGroups_PreservesTopLevelFieldOrder 用于验证追加展示分组后，已有顶层字段顺序仍保持不变。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestAppendUsageGroups_PreservesTopLevelFieldOrder(t *testing.T) {
 	t.Parallel()
 
 	setupSubscribeTestMode()

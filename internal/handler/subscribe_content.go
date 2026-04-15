@@ -44,23 +44,20 @@ func createProxyGroupNode(name string) *yaml.Node {
 // 返回值：返回待追加的分组节点列表和模板渲染错误。
 func newAppendGroupNodes(apiInfo *base.APIResponseInfo, usageDisplay *config.UsageDisplayConfig) ([]*yaml.Node, error) {
 	groupList := make([]*yaml.Node, 0, 2)
-	if apiInfo.Expire > 0 {
-		// 重置时间按与配置校验一致的模板规则展开，避免校验与运行时语义不一致。
-		resetTimeFormat, err := renderResetTimeUsageTemplate(apiInfo.Expire, usageDisplay.ResetTimeFormat)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render reset time usage template: %w", err)
-		}
-		groupList = append(groupList, createProxyGroupNode(resetTimeFormat))
-	}
 
-	if apiInfo.Upload > 0 || apiInfo.Download > 0 || apiInfo.Total > 0 {
-		// 流量展示同样按模板执行，支持条件与内置模板函数等标准语义。
-		trafficFormat, err := renderTrafficUsageTemplate(apiInfo, usageDisplay)
-		if err != nil {
-			return nil, fmt.Errorf("failed to render traffic usage template: %w", err)
-		}
-		groupList = append(groupList, createProxyGroupNode(trafficFormat))
+	// 重置时间按与配置校验一致的模板规则展开，避免校验与运行时语义不一致。
+	resetTimeFormat, err := renderResetTimeUsageTemplate(apiInfo.Expire, usageDisplay.ResetTimeFormat)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render reset time usage template: %w", err)
 	}
+	groupList = append(groupList, createProxyGroupNode(resetTimeFormat))
+
+	// 流量展示同样按模板执行，支持条件与内置模板函数等标准语义。
+	trafficFormat, err := renderTrafficUsageTemplate(apiInfo, usageDisplay)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render traffic usage template: %w", err)
+	}
+	groupList = append(groupList, createProxyGroupNode(trafficFormat))
 
 	return groupList, nil
 }

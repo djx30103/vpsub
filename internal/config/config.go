@@ -125,8 +125,20 @@ func (r *RootConfig) initDefault() {
 		r.Log.Level = "warn"
 	}
 
+	// 统一标准化 provider 类型，避免配置层把大小写兼容逻辑散落到校验和运行时阶段。
+	r.normalizeProviders()
 	r.Global.initDefault()
 	r.Defaults.initDefault()
+}
+
+// normalizeProviders 用于标准化 provider 配置中的类型字段，统一收敛大小写和首尾空白差异。
+// 参数含义：无。
+// 返回值：无。
+func (r *RootConfig) normalizeProviders() {
+	for name, providerItem := range r.Providers {
+		providerItem.Type = strings.ToLower(strings.TrimSpace(providerItem.Type))
+		r.Providers[name] = providerItem
+	}
 }
 
 // initDefault 用于补齐全局配置中的默认值。

@@ -87,6 +87,56 @@ routes:
 	}
 }
 
+// TestLoadAndBuildRuntime_NormalizesProviderTypeCase 用于验证 provider type 在加载和运行时构建前会统一转成小写。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestLoadAndBuildRuntime_NormalizesProviderTypeCase(t *testing.T) {
+	t.Parallel()
+
+	configPath := writeTestConfig(t, `
+providers:
+  hk-bwh:
+    type: BandwagonHost
+    api_id: "veid-1"
+    api_key: "key-1"
+  static-sub:
+    type: PASSThrough
+routes:
+  - path: "/bwh/a.yaml"
+    file: "a.yaml"
+    provider_ref: "hk-bwh"
+  - path: "/static/b.yaml"
+    file: "b.yaml"
+    provider_ref: "static-sub"
+`)
+
+	root, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if got := root.Providers["hk-bwh"].Type; got != "bandwagonhost" {
+		t.Fatalf("expected normalized provider type bandwagonhost, got %s", got)
+	}
+
+	if got := root.Providers["static-sub"].Type; got != "passthrough" {
+		t.Fatalf("expected normalized provider type passthrough, got %s", got)
+	}
+
+	appConf, err := BuildRuntime(root)
+	if err != nil {
+		t.Fatalf("BuildRuntime returned error: %v", err)
+	}
+
+	if got := appConf.PathToConfig["/bwh/a.yaml"].ProviderType; got != "bandwagonhost" {
+		t.Fatalf("expected runtime provider type bandwagonhost, got %s", got)
+	}
+
+	if got := appConf.PathToConfig["/static/b.yaml"].ProviderType; got != "passthrough" {
+		t.Fatalf("expected runtime provider type passthrough, got %s", got)
+	}
+}
+
 // TestBuildRuntime_RejectsUnknownProviderRef 用于验证运行时编译阶段会拒绝不存在的 provider_ref。
 // 参数含义：t 为测试上下文。
 // 返回值：无。
@@ -255,6 +305,41 @@ func TestBuildRuntime_AppliesDefaultsForDirectRootConfig(t *testing.T) {
 
 	if pathConf.UsageDisplay.Enable || pathConf.UsageDisplay.TrafficUnit != "G" {
 		t.Fatalf("expected usage display defaults to be initialized")
+	}
+}
+
+// TestBuildRuntime_NormalizesProviderTypeForDirectRootConfig 用于验证手工构造 RootConfig 时也会统一标准化 provider type。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestBuildRuntime_NormalizesProviderTypeForDirectRootConfig(t *testing.T) {
+	t.Parallel()
+
+	appConfig, err := BuildRuntime(RootConfig{
+		Providers: ProviderMap{
+			"hk-bwh": {
+				Type:   "  BANDWAGONHOST  ",
+				APIID:  "veid-1",
+				APIKey: "key-1",
+			},
+		},
+		Routes: []RouteItem{
+			{
+				Path:        "/bwh/a.yaml",
+				File:        "a.yaml",
+				ProviderRef: "hk-bwh",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildRuntime returned error: %v", err)
+	}
+
+	if got := appConfig.RootConfig.Providers["hk-bwh"].Type; got != "bandwagonhost" {
+		t.Fatalf("expected normalized root provider type bandwagonhost, got %s", got)
+	}
+
+	if got := appConfig.PathToConfig["/bwh/a.yaml"].ProviderType; got != "bandwagonhost" {
+		t.Fatalf("expected runtime provider type bandwagonhost, got %s", got)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,7 +78,7 @@ func (h *SubscribeHandler) writeSubscriptionResponse(c *gin.Context, conf config
 // 参数含义：c 为 Gin 上下文。
 // 返回值：无。
 func (h *SubscribeHandler) Get(c *gin.Context) {
-	requestPath := c.Param("path")
+	requestPath := normalizeRequestPath(c.Param("path"))
 	if requestPath == "" {
 		h.logger.Debug("path not found", zap.String("path", requestPath))
 		c.AbortWithStatus(http.StatusNotFound)
@@ -124,4 +125,16 @@ func (h *SubscribeHandler) Get(c *gin.Context) {
 	}
 
 	h.writeSubscriptionResponse(c, conf, fileContent, apiInfo)
+}
+
+// normalizeRequestPath 用于归一化请求路径，确保与配置阶段的路由路径语义一致。
+// 参数含义：path 为请求中的原始 path 参数。
+// 返回值：返回归一化路径和错误。
+func normalizeRequestPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/" {
+		return path
+	}
+
+	return strings.TrimRight(path, "/")
 }
