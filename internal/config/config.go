@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/djx30103/vpsub/pkg/bytesize"
+	"github.com/djx30103/vpsub/pkg/pathutil"
 )
 
 // RootConfig 保存完整的配置结构。
@@ -209,9 +210,10 @@ func (r *RootConfig) validate() error {
 		}
 	}
 
-	for i, route := range r.Routes {
-		if err := route.validate(); err != nil {
-			return fmt.Errorf("route[%d] %q: %w", i, route.Path, err)
+	for i := range r.Routes {
+		originalPath := r.Routes[i].Path
+		if err := r.Routes[i].validate(); err != nil {
+			return fmt.Errorf("route[%d] %q: %w", i, originalPath, err)
 		}
 	}
 
@@ -322,10 +324,6 @@ func (r *RouteItem) validate() error {
 		return errors.New("path is required")
 	}
 
-	if !strings.HasPrefix(r.Path, "/") {
-		return errors.New("path must start with /")
-	}
-
 	if strings.TrimSpace(r.File) == "" {
 		return errors.New("file is required")
 	}
@@ -334,13 +332,20 @@ func (r *RouteItem) validate() error {
 		return errors.New("provider_ref is required")
 	}
 
-	if !isSafeRoutePath(r.Path) {
+	normalizedPath, err := pathutil.NormalizeRoutePath(r.Path)
+	if err != nil {
+		if errors.Is(err, pathutil.ErrPathMustStartWithSlash) {
+			return errors.New("path must start with /")
+		}
 		return errors.New("path is invalid")
 	}
+	r.Path = normalizedPath
 
-	if !isSafeSubscriptionName(r.File) {
+	normalizedFile, err := pathutil.NormalizeSubscriptionFilePath(r.File)
+	if err != nil {
 		return errors.New("file is invalid")
 	}
+	r.File = normalizedFile
 
 	if r.AccessControl != nil {
 		if err := r.AccessControl.validate(); err != nil {
@@ -431,37 +436,4 @@ func ExecuteTemplate(format string, data map[string]string) (string, error) {
 	}
 
 	return buffer.String(), nil
-}
-
-// isSafeSubscriptionName 用于校验订阅文件名是否仍处于订阅目录内，避免路径越界。
-func isSafeSubscriptionName(name string) bool {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return false
-	}
-
-	if strings.HasPrefix(name, "/") || strings.HasPrefix(name, "\\") {
-		return false
-	}
-
-	cleanName := strings.ReplaceAll(name, "\\", "/")
-	for _, segment := range strings.Split(cleanName, "/") {
-		if segment == ".." || segment == "" {
-			return false
-		}
-	}
-
-	return true
-}
-
-// isSafeRoutePath 用于校验对外路由路径在去除前导斜杠后仍能安全映射到订阅目录内部。
-// 参数含义：path 为配置中的对外路由路径。
-// 返回值：返回是否为安全路径。
-func isSafeRoutePath(path string) bool {
-	path = strings.TrimSpace(path)
-	if path == "" || !strings.HasPrefix(path, "/") {
-		return false
-	}
-
-	return isSafeSubscriptionName(strings.TrimPrefix(path, "/"))
 }

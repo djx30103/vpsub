@@ -343,6 +343,162 @@ func TestBuildRuntime_NormalizesProviderTypeForDirectRootConfig(t *testing.T) {
 	}
 }
 
+// TestBuildRuntime_NormalizesTrailingSlashRoutePath 用于验证运行时构建阶段会忽略路由配置末尾连续斜杠。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestBuildRuntime_NormalizesTrailingSlashRoutePath(t *testing.T) {
+	t.Parallel()
+
+	appConfig, err := BuildRuntime(RootConfig{
+		Providers: ProviderMap{
+			"hk-bwh": {
+				Type:   "bandwagonhost",
+				APIID:  "veid-1",
+				APIKey: "key-1",
+			},
+		},
+		Routes: []RouteItem{
+			{
+				Path:        "/a/b/c///",
+				File:        "a.yaml",
+				ProviderRef: "hk-bwh",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildRuntime returned error: %v", err)
+	}
+
+	pathConf, ok := appConfig.PathToConfig["/a/b/c"]
+	if !ok {
+		t.Fatalf("expected normalized path config for /a/b/c")
+	}
+
+	if pathConf.Path != "/a/b/c" {
+		t.Fatalf("expected normalized path /a/b/c, got %s", pathConf.Path)
+	}
+}
+
+// TestLoadAndBuildRuntime_NormalizesRouteWhitespace 用于验证配置加载与运行时构建对路由 path 和 file 的空白处理保持一致。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestLoadAndBuildRuntime_NormalizesRouteWhitespace(t *testing.T) {
+	t.Parallel()
+
+	configPath := writeTestConfig(t, `
+providers:
+  hk-bwh:
+    type: bandwagonhost
+    api_id: "veid-1"
+    api_key: "key-1"
+routes:
+  - path: " /space/a.yaml// "
+    file: " ./nested/a.yaml "
+    provider_ref: "hk-bwh"
+`)
+
+	root, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	appConfig, err := BuildRuntime(root)
+	if err != nil {
+		t.Fatalf("BuildRuntime returned error: %v", err)
+	}
+
+	pathConf, ok := appConfig.PathToConfig["/space/a.yaml"]
+	if !ok {
+		t.Fatalf("expected normalized path config for /space/a.yaml")
+	}
+
+	if pathConf.Path != "/space/a.yaml" {
+		t.Fatalf("expected normalized path /space/a.yaml, got %s", pathConf.Path)
+	}
+
+	if pathConf.File != "nested/a.yaml" {
+		t.Fatalf("expected normalized file nested/a.yaml, got %s", pathConf.File)
+	}
+}
+
+// TestBuildRuntime_RejectsDuplicateRoutePathAfterTrailingSlashNormalization 用于验证尾斜杠归一化后重复的路由路径会被拒绝。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestBuildRuntime_RejectsDuplicateRoutePathAfterTrailingSlashNormalization(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildRuntime(RootConfig{
+		Providers: ProviderMap{
+			"hk-bwh": {
+				Type:   "bandwagonhost",
+				APIID:  "veid-1",
+				APIKey: "key-1",
+			},
+		},
+		Routes: []RouteItem{
+			{
+				Path:        "/a/b/c",
+				File:        "a.yaml",
+				ProviderRef: "hk-bwh",
+			},
+			{
+				Path:        "/a/b/c/",
+				File:        "b.yaml",
+				ProviderRef: "hk-bwh",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected BuildRuntime to fail for duplicate normalized request path")
+	}
+}
+
+// TestLoad_RejectsRoutePathWithEmptyMiddleSegment 用于验证配置加载阶段会拒绝中间包含空路径段的 route path。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestLoad_RejectsRoutePathWithEmptyMiddleSegment(t *testing.T) {
+	t.Parallel()
+
+	configPath := writeTestConfig(t, `
+providers:
+  hk-bwh:
+    type: bandwagonhost
+    api_id: "veid-1"
+    api_key: "key-1"
+routes:
+  - path: "/group//a.yaml"
+    file: "a.yaml"
+    provider_ref: "hk-bwh"
+`)
+
+	if _, err := Load(configPath); err == nil {
+		t.Fatalf("expected Load to fail for route path with empty middle segment")
+	}
+}
+
+// TestLoad_RejectsRoutePathWithDotSegment 用于验证配置加载阶段会拒绝包含 . 路径段的 route path。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestLoad_RejectsRoutePathWithDotSegment(t *testing.T) {
+	t.Parallel()
+
+	configPath := writeTestConfig(t, `
+providers:
+  hk-bwh:
+    type: bandwagonhost
+    api_id: "veid-1"
+    api_key: "key-1"
+routes:
+  - path: "/group/./a.yaml"
+    file: "a.yaml"
+    provider_ref: "hk-bwh"
+`)
+
+	if _, err := Load(configPath); err == nil {
+		t.Fatalf("expected Load to fail for route path with dot segment")
+	}
+}
+
 // TestLoad_RejectsUnsafeRouteFile 用于验证配置加载阶段会拒绝越界的订阅文件相对路径。
 // 参数含义：t 为测试上下文。
 // 返回值：无。
@@ -363,6 +519,29 @@ routes:
 
 	if _, err := Load(configPath); err == nil {
 		t.Fatalf("expected Load to fail for unsafe route file")
+	}
+}
+
+// TestLoad_RejectsRouteFileWithDotSegment 用于验证配置加载阶段会拒绝包含 . 路径段的订阅文件相对路径。
+// 参数含义：t 为测试上下文。
+// 返回值：无。
+func TestLoad_RejectsRouteFileWithDotSegment(t *testing.T) {
+	t.Parallel()
+
+	configPath := writeTestConfig(t, `
+providers:
+  hk-bwh:
+    type: bandwagonhost
+    api_id: "veid-1"
+    api_key: "key-1"
+routes:
+  - path: "/masked"
+    file: "dir/./x.yaml"
+    provider_ref: "hk-bwh"
+`)
+
+	if _, err := Load(configPath); err == nil {
+		t.Fatalf("expected Load to fail for route file with dot segment")
 	}
 }
 

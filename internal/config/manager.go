@@ -3,11 +3,10 @@ package config
 import (
 	"flag"
 	"fmt"
-	"net/url"
-	"strings"
 
 	"github.com/spf13/viper"
 
+	"github.com/djx30103/vpsub/pkg/pathutil"
 	"github.com/djx30103/vpsub/pkg/provider"
 )
 
@@ -134,12 +133,12 @@ func (a *AppConfig) buildPathForRoute(route RouteItem) error {
 		return fmt.Errorf("unknown provider type: %s", providerItem.Type)
 	}
 
-	reqPath, err := normalizeRoutePath(route.Path)
+	reqPath, err := pathutil.NormalizeRoutePath(route.Path)
 	if err != nil {
 		return fmt.Errorf("normalize path %q: %w", route.Path, err)
 	}
 
-	filePath, err := normalizeSubscriptionFilePath(route.File)
+	filePath, err := pathutil.NormalizeSubscriptionFilePath(route.File)
 	if err != nil {
 		return fmt.Errorf("normalize file %q: %w", route.File, err)
 	}
@@ -239,40 +238,4 @@ func applyUsageDisplayOverrides(dst *UsageDisplayConfig, src *UsageDisplayOverri
 	if src.ResetTimeFormat != nil {
 		dst.ResetTimeFormat = *src.ResetTimeFormat
 	}
-}
-
-// normalizeRoutePath 用于统一归一化对外路由路径，避免出现重复或非法表示。
-// 参数含义：path 为配置中的原始路由路径。
-// 返回值：返回归一化后的路由路径和错误。
-func normalizeRoutePath(path string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return "", fmt.Errorf("path is empty")
-	}
-
-	normalized, err := url.JoinPath("/", strings.TrimPrefix(path, "/"))
-	if err != nil {
-		return "", err
-	}
-
-	if !isSafeRoutePath(normalized) {
-		return "", fmt.Errorf("path is unsafe")
-	}
-
-	return normalized, nil
-}
-
-// normalizeSubscriptionFilePath 用于统一归一化订阅文件相对路径，确保其始终位于 subscriptions 目录内。
-// 参数含义：filePath 为配置中的订阅文件相对路径。
-// 返回值：返回归一化后的文件相对路径和错误。
-func normalizeSubscriptionFilePath(filePath string) (string, error) {
-	filePath = strings.TrimSpace(filePath)
-	filePath = strings.ReplaceAll(filePath, "\\", "/")
-	filePath = strings.TrimPrefix(filePath, "./")
-
-	if !isSafeSubscriptionName(filePath) {
-		return "", fmt.Errorf("file is unsafe")
-	}
-
-	return filePath, nil
 }

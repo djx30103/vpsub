@@ -19,9 +19,9 @@ import (
 // Injectors from wire.go:
 
 func NewApp(appConfig *config.AppConfig, logger *log.Logger) (*app.App, func(), error) {
-	handlerHandler := handler.NewHandler(logger, appConfig)
+	handlerHandler := handler.NewHandler(logger)
 	subscribeHandler := handler.NewSubscribeHandler(handlerHandler, appConfig)
-	routerRouter := router.NewRouter(logger, subscribeHandler, appConfig)
+	routerRouter := router.NewRouter(subscribeHandler)
 	httpServer := server.NewHTTPServer(logger, appConfig, routerRouter)
 	appApp := newApp(httpServer)
 	return appApp, func() {

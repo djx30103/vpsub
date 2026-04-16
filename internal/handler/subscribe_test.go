@@ -20,6 +20,7 @@ import (
 	"github.com/djx30103/vpsub/internal/config"
 	"github.com/djx30103/vpsub/internal/middleware"
 	"github.com/djx30103/vpsub/pkg/log"
+	"github.com/djx30103/vpsub/pkg/pathutil"
 	"github.com/djx30103/vpsub/pkg/provider/base"
 )
 
@@ -34,63 +35,6 @@ func setupSubscribeTestMode() {
 	})
 }
 
-// TestNormalizeRequestPath_TrimsTrailingSlashes 用于验证路径归一化时会删除末尾连续斜杠，同时保留非末尾内容不变。
-// 参数含义：t 为测试上下文。
-// 返回值：无。
-func TestNormalizeRequestPath_TrimsTrailingSlashes(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		name string
-		path string
-		want string
-	}{
-		{
-			name: "single trailing slash",
-			path: "/test.yaml/",
-			want: "/test.yaml",
-		},
-		{
-			name: "multiple trailing slashes",
-			path: "/test.yaml//",
-			want: "/test.yaml",
-		},
-		{
-			name: "nested path single trailing slash",
-			path: "/a/b/c/",
-			want: "/a/b/c",
-		},
-		{
-			name: "nested path multiple trailing slashes",
-			path: "/a/b/c///",
-			want: "/a/b/c",
-		},
-		{
-			name: "only trailing slashes remain empty",
-			path: "//",
-			want: "",
-		},
-		{
-			name: "middle slash preserved",
-			path: "/group//node///",
-			want: "/group//node",
-		},
-	}
-
-	for _, testCase := range testCases {
-		testCase := testCase
-
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := normalizeRequestPath(testCase.path)
-			if got != testCase.want {
-				t.Fatalf("normalizeRequestPath(%q) = %q, want %q", testCase.path, got, testCase.want)
-			}
-		})
-	}
-}
-
 // TestGetProviderInfo_UsesCachedAPIWhenProviderFails 用于验证上游接口失败时会回退到最近一次成功的流量缓存。
 // 参数含义：t 为测试上下文。
 // 返回值：无。
@@ -98,6 +42,10 @@ func TestGetProviderInfo_UsesCachedAPIWhenProviderFails(t *testing.T) {
 	t.Parallel()
 
 	setupSubscribeTestMode()
+
+	if got := pathutil.NormalizeRequestPath("/cached.yaml//"); got != "/cached.yaml" {
+		t.Fatalf("expected normalized path /cached.yaml, got %s", got)
+	}
 
 	handler, conf := newTestSubscribeHandler(t)
 	cachedAPI := &base.APIResponseInfo{
@@ -793,7 +741,6 @@ func newTestSubscribeHandler(t *testing.T) (*SubscribeHandler, config.PathConfig
 
 	handler := NewSubscribeHandler(&Handler{
 		logger: newTestHandlerLogger(),
-		conf:   appConf,
 	}, appConf)
 	handler.cache = gocache.New(gocache.NoExpiration, time.Second)
 
