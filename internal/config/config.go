@@ -168,18 +168,15 @@ func (r *DefaultsConfig) initDefault() {
 func (r *ProviderConfigOverride) initDefault() {
 	if r.APITTL == nil {
 		// 0 是有效值（关闭缓存），仅在用户未配置时才填入该默认值。
-		r.APITTL = new(time.Duration)
-		*r.APITTL = 300 * time.Second
+		r.APITTL = new(300 * time.Second)
 	}
 
 	if r.RequestTimeout == nil {
-		r.RequestTimeout = new(time.Duration)
-		*r.RequestTimeout = 10 * time.Second
+		r.RequestTimeout = new(10 * time.Second)
 	}
 
 	if r.UpdateInterval == nil {
-		r.UpdateInterval = new(time.Duration)
-		*r.UpdateInterval = 24 * time.Hour
+		r.UpdateInterval = new(24 * time.Hour)
 	}
 }
 
